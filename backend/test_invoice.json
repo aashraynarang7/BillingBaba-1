@@ -1,0 +1,72 @@
+{
+  "_id": "6979b8ed8d96f7fa8b445bbc",
+  "companyId": "696f195bf637e631873fd951",
+  "partyId": "696f70522998076195bfd6c3",
+  "partyName": "Aashray Narang",
+  "phone": "08077607209",
+  "invoiceNumber": "INV-264558",
+  "invoiceDate": "2026-01-28T06:54:23.581Z",
+  "invoiceTime": "12:24 PM",
+  "billingAddress": "Shop No. 11, C-9 Block, DDA Market, Yamuna Vihar",
+  "shippingAddress": "",
+  "eWayBillNo": "",
+  "stateOfSupply": "Madhya Pradesh",
+  "items": [
+    {
+      "name": "spice",
+      "quantity": 2,
+      "unit": "PCS",
+      "priceUnit": {
+        "amount": 129,
+        "taxType": "withoutTax"
+      },
+      "discount": {
+        "percent": 0,
+        "amount": 0
+      },
+      "tax": {
+        "rate": 0,
+        "amount": 0
+      },
+      "amount": 258,
+      "_id": "6979b8ed8d96f7fa8b445bbd"
+    },
+    {
+      "name": "khakra",
+      "quantity": 0,
+      "unit": "PCS",
+      "priceUnit": {
+        "amount": 99,
+        "taxType": "withoutTax"
+      },
+      "discount": {
+        "percent": 0,
+        "amount": 0
+      },
+      "tax": {
+        "rate": 0,
+        "amount": 0
+      },
+      "amount": 0,
+      "_id": "6979b8ed8d96f7fa8b445bbe"
+    }
+  ],
+  "subTotal": 0,
+  "totalDiscount": 0,
+  "totalTax": 0,
+  "roundOff": 0,
+  "grandTotal": 258,
+  "paymentType": "Credit",
+  "receivedAmount": 0,
+  "balanceDue": 258,
+  "loyaltyPointsUsed": 0,
+  "loyaltyAmount": 0,
+  "remainingAmount": 0,
+  "isOrder": false,
+  "isPaid": true,
+  "isReturn": false,
+  "images": [],
+  "createdAt": "2026-01-28T07:21:17.388Z",
+  "updatedAt": "2026-01-28T07:21:17.388Z",
+  "__v": 0
+}

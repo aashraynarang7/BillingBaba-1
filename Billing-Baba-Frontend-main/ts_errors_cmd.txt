@@ -1,0 +1,5 @@
+app/dashboard/sales/component/JobWorkOutTable.tsx(17,1): error TS1003: Identifier expected.
+app/dashboard/sales/component/JobWorkOutTable.tsx(17,8): error TS1005: ',' expected.
+app/dashboard/sales/component/JobWorkOutTable.tsx(17,18): error TS1005: ';' expected.
+app/dashboard/sales/component/JobWorkOutTable.tsx(24,1): error TS1128: Declaration or statement expected.
+app/dashboard/sales/component/JobWorkOutTable.tsx(24,3): error TS1434: Unexpected keyword or identifier.
