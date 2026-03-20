@@ -186,9 +186,7 @@ export default function CreatePurchaseOrderPage({ onCancel, initialData }: { onC
                     };
                 });
                 setAllItems(flattenedItems);
-                if (!orderNumber && !initialData) {
-                    setOrderNumber(`PO-${Date.now().toString().slice(-6)}`);
-                }
+                // order number assigned sequentially by backend on save
             } catch (error) {
                 console.error("Failed to load data", error);
             }
@@ -326,14 +324,14 @@ export default function CreatePurchaseOrderPage({ onCancel, initialData }: { onC
         documents.forEach((file) => formData.append('documents', file));
 
         try {
-            let response;
             if (initialData && initialData._id) {
-                response = await updatePurchase(initialData._id, formData);
+                await updatePurchase(initialData._id, formData);
+                onCancel();
             } else {
-                response = await createPurchase(formData);
+                const response = await createPurchase(formData);
+                setSavedData(response);
+                setIsPreviewOpen(true);
             }
-            setSavedData(response);
-            setIsPreviewOpen(true);
         } catch (error) {
             console.error("Error saving purchase order", error);
             toast({ title: "Failed to save purchase order", variant: "destructive" });

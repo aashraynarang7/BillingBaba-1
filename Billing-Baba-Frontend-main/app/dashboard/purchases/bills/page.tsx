@@ -137,6 +137,14 @@ export default function PurchaseBills() {
         }
     };
 
+    const handleDuplicate = (id: string) => {
+        const rawPurchase = rawPurchases.find(p => String(p._id) === id);
+        if (rawPurchase) {
+            setInitialDataForEdit({ ...rawPurchase, _id: undefined, billNumber: '', billDate: new Date() });
+            setIsCreating(true);
+        }
+    };
+
     const handleMakePayment = (partyId: string, amount: number, invoiceId?: string) => {
         setPaymentModalData({ partyId, amount, invoiceId });
         setIsPaymentModalOpen(true);
@@ -206,6 +214,7 @@ export default function PurchaseBills() {
                     onView={handleEdit}
                     onConvert={handleConvert}
                     onMakePayment={handleMakePayment}
+                    onDuplicate={handleDuplicate}
                 />
             ) : (
                 <div className="rounded-lg border border-gray-200 bg-white shadow-sm">

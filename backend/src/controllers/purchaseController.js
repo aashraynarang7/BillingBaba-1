@@ -43,7 +43,7 @@ exports.createPurchase = async (req, res) => {
                     const lastNum = parseInt(parts[parts.length - 1]);
                     if (!isNaN(lastNum)) nextNum = lastNum + 1;
                 }
-                purchaseData.returnNo = `DN-${nextNum}`;
+                purchaseData.returnNo = `${nextNum}`;
             }
 
             const debitNote = new DebitNote(purchaseData);
@@ -87,6 +87,30 @@ exports.createPurchase = async (req, res) => {
             } else {
                 purchaseData.documentType = 'BILL';
                 purchaseData.isBill = true;
+            }
+
+            // Sequential billNumber for BILL and FA types
+            if ((purchaseData.documentType === 'BILL' || purchaseData.documentType === 'FA') && !purchaseData.billNumber) {
+                const last = await Purchase.findOne({ companyId: purchaseData.companyId, isBill: true }).sort({ createdAt: -1 });
+                let nextNum = 1;
+                if (last && last.billNumber) {
+                    const parts = last.billNumber.split('-');
+                    const lastNum = parseInt(parts[parts.length - 1]);
+                    if (!isNaN(lastNum)) nextNum = lastNum + 1;
+                }
+                purchaseData.billNumber = `${nextNum}`;
+            }
+
+            // Sequential orderNumber for PO type
+            if (purchaseData.documentType === 'PO' && !purchaseData.orderNumber) {
+                const last = await Purchase.findOne({ companyId: purchaseData.companyId, documentType: 'PO' }).sort({ createdAt: -1 });
+                let nextNum = 1;
+                if (last && last.orderNumber) {
+                    const parts = last.orderNumber.split('-');
+                    const lastNum = parseInt(parts[parts.length - 1]);
+                    if (!isNaN(lastNum)) nextNum = lastNum + 1;
+                }
+                purchaseData.orderNumber = `${nextNum}`;
             }
 
             const purchase = new Purchase(purchaseData);
@@ -452,7 +476,18 @@ exports.convertToBill = async (req, res) => {
 
         billData.documentType = 'BILL';
         billData.isBill = true;
-        billData.billNumber = req.body.billNumber || `BILL-${Date.now()}`;
+        if (req.body.billNumber) {
+            billData.billNumber = req.body.billNumber;
+        } else {
+            const lastBill = await Purchase.findOne({ companyId: po.companyId, isBill: true }).sort({ createdAt: -1 }).session(session);
+            let nextNum = 1;
+            if (lastBill && lastBill.billNumber) {
+                const parts = lastBill.billNumber.split('-');
+                const lastNum = parseInt(parts[parts.length - 1]);
+                if (!isNaN(lastNum)) nextNum = lastNum + 1;
+            }
+            billData.billNumber = `${nextNum}`;
+        }
         billData.billDate = new Date();
         billData.orderNumber = po.orderNumber; // Keep reference
 

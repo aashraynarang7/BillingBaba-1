@@ -35,6 +35,22 @@ const productSchema = new mongoose.Schema({
     companyId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Company'
-    }
+    },
+
+    // Online Store
+    onlineStorePrice: { type: Number, default: 0 },
+    onlineStoreDescription: { type: String },
+
+    // Manufacturing
+    rawMaterials: [{
+        name: { type: String },
+        qty: { type: Number, default: 0 },
+        unit: { type: String, default: 'None' },
+        purchasePrice: { type: Number, default: 0 }
+    }],
+    additionalCosts: [{
+        name: { type: String },
+        amount: { type: Number, default: 0 }
+    }]
 })
 module.exports = mongoose.model('Product', productSchema);

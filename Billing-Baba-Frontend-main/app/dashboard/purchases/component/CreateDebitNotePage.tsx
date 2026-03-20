@@ -151,7 +151,7 @@ export default function CreateDebitNotePage({ onCancel, initialData }: { onCance
                     return { ...d, ...item, purchasePrice: d.purchasePrice || item.purchasePrice, unit: d.unit || item.unit };
                 });
                 setAllItems(flat);
-                setReturnNo('DN-' + Date.now().toString().slice(-4));
+                // return number assigned sequentially by backend on save
             } catch (e) {
                 console.error(e);
             }

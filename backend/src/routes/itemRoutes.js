@@ -9,6 +9,11 @@ const uploadFields = upload.fields([
 
 router.post('/', uploadFields, itemController.createItem);
 router.get('/', itemController.getItems);
+router.get('/bulk/data', itemController.getBulkItemData);
+router.get('/bulk/inactive-data', itemController.getInactiveItemData);
+router.post('/bulk/inactive', itemController.bulkInactive);
+router.post('/bulk/active', itemController.bulkActive);
+router.post('/bulk/assign-code', itemController.bulkAssignCode);
 router.get('/:id', itemController.getItemById);
 router.put('/:id', uploadFields, itemController.updateItem);
 router.delete('/:id', itemController.deleteItem);

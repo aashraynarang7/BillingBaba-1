@@ -1,4 +1,5 @@
 const BankAccount = require('../models/BankAccount');
+const BankTransfer = require('../models/BankTransfer');
 const SaleInvoice = require('../models/SaleInvoice');
 const Purchase = require('../models/Purchase');
 const PaymentIn = require('../models/PaymentIn');
@@ -66,11 +67,13 @@ exports.getBankTransactions = async (req, res) => {
         const { companyId, accountName } = account;
 
         // Query all transaction types where paymentType or paymentMode matches account name
-        const [sales, purchases, paymentsIn, paymentsOut] = await Promise.all([
+        const [sales, purchases, paymentsIn, paymentsOut, transfersOut, transfersIn] = await Promise.all([
             SaleInvoice.find({ companyId, paymentType: accountName }).populate('partyId', 'name').lean(),
             Purchase.find({ companyId, paymentType: accountName }).populate('partyId', 'name').lean(),
             PaymentIn.find({ companyId, paymentMode: accountName }).populate('partyId', 'name').lean(),
             PaymentOut.find({ companyId, paymentMode: accountName }).populate('partyId', 'name').lean(),
+            BankTransfer.find({ companyId, fromAccount: accountName }).lean(),
+            BankTransfer.find({ companyId, toAccount: accountName }).lean(),
         ]);
 
         const transactions = [
@@ -94,6 +97,16 @@ exports.getBankTransactions = async (req, res) => {
                 name: p.partyId?.name || 'Unknown',
                 date: p.date, amount: p.amount, isIn: false
             })),
+            ...transfersOut.map(t => ({
+                id: t._id, type: 'Bank Transfer',
+                name: `To: ${t.toAccount}`,
+                date: t.date, amount: t.amount, isIn: false
+            })),
+            ...transfersIn.map(t => ({
+                id: t._id, type: 'Bank Transfer',
+                name: `From: ${t.fromAccount}`,
+                date: t.date, amount: t.amount, isIn: true
+            })),
         ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
         // Opening balance entry
@@ -111,10 +124,35 @@ exports.getBankTransactions = async (req, res) => {
     }
 };
 
+// POST /api/bank-accounts/transfer  — { companyId, fromAccount, toAccount, amount, date, description }
+exports.createBankTransfer = async (req, res) => {
+    try {
+        const { companyId, fromAccount, toAccount, amount, date, description, imageUrl } = req.body;
+        if (!companyId || !fromAccount || !toAccount || !amount)
+            return res.status(400).json({ error: 'companyId, fromAccount, toAccount and amount are required' });
+        if (fromAccount === toAccount)
+            return res.status(400).json({ error: 'From and To accounts must be different' });
+
+        const transfer = new BankTransfer({
+            companyId,
+            fromAccount,
+            toAccount,
+            amount: Number(amount),
+            date: date ? new Date(date) : new Date(),
+            description,
+            imageUrl,
+        });
+        await transfer.save();
+        res.status(201).json(transfer);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
 // Helper: compute current balance for an account
 async function computeBalance(account) {
     const { companyId, accountName, openingBalance } = account;
-    const [sales, purchases, paymentsIn, paymentsOut] = await Promise.all([
+    const [sales, purchases, paymentsIn, paymentsOut, transfersOut, transfersIn] = await Promise.all([
         SaleInvoice.aggregate([
             { $match: { companyId: account.companyId, paymentType: accountName } },
             { $group: { _id: null, total: { $sum: '$grandTotal' } } }
@@ -131,9 +169,17 @@ async function computeBalance(account) {
             { $match: { companyId: account.companyId, paymentMode: accountName } },
             { $group: { _id: null, total: { $sum: '$amount' } } }
         ]),
+        BankTransfer.aggregate([
+            { $match: { companyId: account.companyId, fromAccount: accountName } },
+            { $group: { _id: null, total: { $sum: '$amount' } } }
+        ]),
+        BankTransfer.aggregate([
+            { $match: { companyId: account.companyId, toAccount: accountName } },
+            { $group: { _id: null, total: { $sum: '$amount' } } }
+        ]),
     ]);
 
-    const totalIn = (sales[0]?.total || 0) + (paymentsIn[0]?.total || 0);
-    const totalOut = (purchases[0]?.total || 0) + (paymentsOut[0]?.total || 0);
+    const totalIn = (sales[0]?.total || 0) + (paymentsIn[0]?.total || 0) + (transfersIn[0]?.total || 0);
+    const totalOut = (purchases[0]?.total || 0) + (paymentsOut[0]?.total || 0) + (transfersOut[0]?.total || 0);
     return (openingBalance || 0) + totalIn - totalOut;
 }

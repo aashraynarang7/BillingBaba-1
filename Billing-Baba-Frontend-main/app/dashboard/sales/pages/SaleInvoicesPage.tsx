@@ -4,15 +4,17 @@ import { useState, useEffect } from 'react';
 import TransactionsTable from '../component/TransactionsTable';
 import { Transaction } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowUpRight, Plus } from 'lucide-react';
+import { ArrowUpRight, Plus, Search, MessageCircle } from 'lucide-react';
 import FilterBar from '../component/FilterBar';
 import { fetchSaleInvoices } from '@/lib/api';
 import PaymentInModal from '../component/PaymentInModal';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import CreateSaleInvoicePage from './CreateSaleInvoicePage';
+import CreateCreditNotePage from './CreateCreditNotePage';
 import { InvoicePreview } from '../component/InvoicePreview';
 import { toast } from '@/components/ui/use-toast';
+import WhatsAppSetupModal from '@/components/dashboard/WhatsAppSetupModal';
 
 const SaleInvoices = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -23,8 +25,11 @@ const SaleInvoices = () => {
   const [paymentAmount, setPaymentAmount] = useState<number | null>(null);
   const [paymentInvoiceId, setPaymentInvoiceId] = useState<string | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<Transaction | null>(null);
+  const [creditNoteSource, setCreditNoteSource] = useState<Transaction | null>(null);
   const [printInvoiceData, setPrintInvoiceData] = useState<any>(null);
   const [filters, setFilters] = useState<any>({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isWhatsAppSetupOpen, setIsWhatsAppSetupOpen] = useState(false);
 
   const loadInvoices = async () => {
     setIsLoading(true);
@@ -38,6 +43,7 @@ const SaleInvoices = () => {
         invoiceNo: inv.invoiceNumber || "-",
         partyName: inv.partyName || "Unknown",
         partyId: inv.partyId?._id || inv.partyId || undefined,
+        phone: inv.partyId?.phone || inv.phone || '',
         transactionType: 'Sale',
         paymentType: inv.paymentType || "Cash",
         amount: Number(inv.grandTotal) || 0,
@@ -74,6 +80,18 @@ const SaleInvoices = () => {
       loadInvoices();
     }
   }, [isCreatingInvoice, editingInvoice, filters]);
+
+  const filteredTransactions = searchQuery.trim()
+    ? transactions.filter(t => {
+        const q = searchQuery.trim().toLowerCase();
+        return (
+          String(t.invoiceNo || '').toLowerCase().includes(q) ||
+          String(t.amount || '').includes(q) ||
+          String(t.balance || '').includes(q) ||
+          (t.partyName || '').toLowerCase().includes(q)
+        );
+      })
+    : transactions;
 
   const totalAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
   const totalBalance = transactions.reduce((sum, t) => sum + t.balance, 0);
@@ -136,6 +154,38 @@ const SaleInvoices = () => {
     }
   };
 
+  const handleConvertToReturn = (id: string) => {
+    const inv = transactions.find(t => t.id === id);
+    if (inv) setCreditNoteSource(inv);
+  };
+
+  const handleDuplicate = (id: string) => {
+    const inv = transactions.find(t => t.id === id);
+    if (inv) setEditingInvoice({ ...inv, _id: undefined, id: undefined, invoiceNumber: '', invoiceDate: new Date() } as any);
+  };
+
+  if (creditNoteSource) {
+    return (
+      <div className="w-full bg-slate-50 p-4 sm:p-6 lg:p-8 min-h-screen">
+        <CreateCreditNotePage
+          onCancel={() => setCreditNoteSource(null)}
+          initialData={{
+            fromInvoice: true,
+            invoiceId: String(creditNoteSource.id),
+            partyId: (creditNoteSource as any).partyId,
+            partyName: creditNoteSource.partyName,
+            phone: (creditNoteSource as any).phone || '',
+            invoiceNumber: String(creditNoteSource.invoiceNo),
+            siStatus: creditNoteSource.status,
+            siBalance: creditNoteSource.balance,
+            items: (creditNoteSource as any).items || [],
+            grandTotal: creditNoteSource.amount,
+          }}
+        />
+      </div>
+    );
+  }
+
   if (isCreatingInvoice || editingInvoice) {
     return <CreateSaleInvoicePage
       key={(editingInvoice as any)?._id || 'new'}
@@ -148,8 +198,20 @@ const SaleInvoices = () => {
     <div className="space-y-6">
       <Card className="shadow-sm">
         <CardContent className="p-0 divide-y">
-          <div className="p-4 border-b flex justify-between items-center">
-            <FilterBar onFilterChange={handleFilterChange} />
+          <div className="p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
+              <FilterBar onFilterChange={handleFilterChange} />
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search invoice no, amount, balance..."
+                  className="pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 w-64"
+                />
+              </div>
+            </div>
             <div className="flex items-center gap-2">
               <Button
                 onClick={() => setIsCreatingInvoice(true)}
@@ -162,6 +224,14 @@ const SaleInvoices = () => {
                 className="bg-green-600 hover:bg-green-700 text-white gap-2"
               >
                 <Plus size={16} /> Payment In
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setIsWhatsAppSetupOpen(true)}
+                className="border-green-500 text-green-700 hover:bg-green-50 gap-2"
+                title="WhatsApp Setup"
+              >
+                <MessageCircle size={16} /> WhatsApp
               </Button>
             </div>
           </div>
@@ -190,13 +260,15 @@ const SaleInvoices = () => {
       </Card>
 
       <TransactionsTable
-        transactions={transactions}
+        transactions={filteredTransactions}
         showToolbar={true}
         onEdit={handleEdit}
         onDelete={handleDelete}
         onView={handleView}
         onPrint={handlePrintRow}
+        onDuplicate={handleDuplicate}
         onReceivePayment={handleReceivePayment}
+        onConvertToReturn={handleConvertToReturn}
       />
 
       <PaymentInModal
@@ -216,6 +288,11 @@ const SaleInvoices = () => {
           type="INVOICE"
         />
       )}
+
+      <WhatsAppSetupModal
+        isOpen={isWhatsAppSetupOpen}
+        onClose={() => setIsWhatsAppSetupOpen(false)}
+      />
     </div>
   );
 };

@@ -164,9 +164,7 @@ export default function CreatePurchaseInvoicePage({ onCancel, initialData }: { o
                     };
                 });
                 setAllItems(flattenedItems);
-                if (!initialData && !billNumber) {
-                    setBillNumber(`BILL-${Date.now().toString().slice(-6)}`);
-                }
+                // bill number assigned sequentially by backend on save
             } catch (error) {
                 console.error("Failed to load data", error);
             }
@@ -272,9 +270,8 @@ export default function CreatePurchaseInvoicePage({ onCancel, initialData }: { o
 
         try {
             if (initialData && initialData._id) {
-                const response = await updatePurchase(initialData._id, formData);
-                setSavedData(response);
-                setIsPreviewOpen(true);
+                await updatePurchase(initialData._id, formData);
+                onCancel();
             } else {
                 const response = await createPurchase(formData);
                 setSavedData(response);

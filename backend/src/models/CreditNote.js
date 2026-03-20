@@ -16,6 +16,7 @@ const creditNoteSchema = new mongoose.Schema({
 
     returnNo: { type: String, required: true }, // Credit Note Number
     invoiceNumber: { type: String }, // Original Invoice Number
+    linkedInvoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'SaleInvoice' }, // Source SI
     invoiceDate: { type: Date }, // Original Invoice Date
     creditNoteDate: { type: Date, default: Date.now },
 

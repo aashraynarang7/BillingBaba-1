@@ -32,10 +32,12 @@ interface TransactionsTableProps {
   showToolbar?: boolean;
   onConvert?: (id: string) => void;
   onConvertToOrder?: (id: string) => void;
+  onConvertToReturn?: (id: string) => void;
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;
   onView?: (id: string) => void;
   onPrint?: (id: string) => void;
+  onDuplicate?: (id: string) => void;
   onReceivePayment?: (partyId: string, amount: number) => void;
   onMakePayment?: (partyId: string, amount: number, invoiceId?: string) => void;
 }
@@ -61,9 +63,10 @@ const XlsIcon = () => (
   </div>
 );
 
-const TransactionsTable = ({ transactions, showToolbar = false, onConvert, onConvertToOrder, onEdit, onDelete,
+const TransactionsTable = ({ transactions, showToolbar = false, onConvert, onConvertToOrder, onConvertToReturn, onEdit, onDelete,
   onView,
   onPrint,
+  onDuplicate,
   onReceivePayment,
   onMakePayment,
 }: TransactionsTableProps) => {
@@ -187,10 +190,12 @@ const TransactionsTable = ({ transactions, showToolbar = false, onConvert, onCon
                   transaction={transaction}
                   onConvert={onConvert}
                   onConvertToOrder={onConvertToOrder}
+                  onConvertToReturn={onConvertToReturn}
                   onEdit={onEdit}
                   onDelete={onDelete}
                   onView={onView}
                   onPrint={onPrint}
+                  onDuplicate={onDuplicate}
                   onReceivePayment={onReceivePayment}
                   onMakePayment={onMakePayment}
                 />

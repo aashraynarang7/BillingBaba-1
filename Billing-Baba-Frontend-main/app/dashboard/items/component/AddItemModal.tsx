@@ -77,12 +77,26 @@ interface AddItemModalProps {
     onSuccess?: () => void;
     initialData?: any;
     mode?: 'add' | 'edit';
+    defaultType?: 'Product' | 'Service';
 }
 
-export default function AddItemModal({ isOpen, onClose, onSuccess, initialData, mode = 'add' }: AddItemModalProps) {
-    const [itemType, setItemType] = useState<'Product' | 'Service'>('Product');
+const MFG_UNITS = ['None', 'Pcs', 'Box', 'Kg', 'Gm', 'Ltr', 'Mtr', 'Ft', 'Dozen', 'Pack', 'Set'];
+
+interface RawMaterialRow { name: string; qty: string; unit: string; purchasePrice: string; }
+interface AdditionalCostRow { name: string; amount: string; }
+
+export default function AddItemModal({ isOpen, onClose, onSuccess, initialData, mode = 'add', defaultType = 'Product' }: AddItemModalProps) {
+    const [itemType, setItemType] = useState<'Product' | 'Service'>(defaultType);
     const [activeTab, setActiveTab] = useState('Pricing');
     const [showWholesale, setShowWholesale] = useState(false);
+
+    // Manufacturing state
+    const [rawMaterials, setRawMaterials] = useState<RawMaterialRow[]>([
+        { name: '', qty: '', unit: 'None', purchasePrice: '' },
+        { name: '', qty: '', unit: 'None', purchasePrice: '' },
+    ]);
+    const [additionalCosts, setAdditionalCosts] = useState<AdditionalCostRow[]>([]);
+    const [showAdditionalCosts, setShowAdditionalCosts] = useState(false);
 
     // Modals state
     const [isUnitModalOpen, setUnitModalOpen] = useState(false);
@@ -119,7 +133,9 @@ export default function AddItemModal({ isOpen, onClose, onSuccess, initialData, 
             atPrice: '',
             asOfDate: new Date().toISOString().split('T')[0],
             minStockToMaintain: '',
-            location: ''
+            location: '',
+            onlineStorePrice: '',
+            onlineStoreDescription: '',
         }
     });
 
@@ -161,14 +177,32 @@ export default function AddItemModal({ isOpen, onClose, onSuccess, initialData, 
                     atPrice: details.atPrice || '',
                     asOfDate: new Date().toISOString().split('T')[0],
                     minStockToMaintain: details.minStockToMaintain || '',
-                    location: details.location || ''
+                    location: details.location || '',
+                    onlineStorePrice: details.onlineStorePrice || '',
+                    onlineStoreDescription: details.onlineStoreDescription || '',
                 });
+
+                // Load manufacturing data
+                const rm = details.rawMaterials || [];
+                setRawMaterials(rm.length > 0
+                    ? rm.map((r: any) => ({ name: r.name || '', qty: String(r.qty || ''), unit: r.unit || 'None', purchasePrice: String(r.purchasePrice || '') }))
+                    : [{ name: '', qty: '', unit: 'None', purchasePrice: '' }, { name: '', qty: '', unit: 'None', purchasePrice: '' }]
+                );
+                const ac = details.additionalCosts || [];
+                setAdditionalCosts(ac.map((c: any) => ({ name: c.name || '', amount: String(c.amount || '') })));
+                setShowAdditionalCosts(ac.length > 0);
 
             } else {
                 reset(); // Reset to defaults
-                setItemType('Product');
+                setItemType(defaultType);
                 setActiveTab('Pricing');
                 setSelectedCategory(null);
+                setRawMaterials([
+                    { name: '', qty: '', unit: 'None', purchasePrice: '' },
+                    { name: '', qty: '', unit: 'None', purchasePrice: '' },
+                ]);
+                setAdditionalCosts([]);
+                setShowAdditionalCosts(false);
             }
         }
     }, [isOpen, reset, mode, initialData]);
@@ -232,7 +266,15 @@ export default function AddItemModal({ isOpen, onClose, onSuccess, initialData, 
                 openingQuantity: Number(data.openingQuantity) || 0,
                 atPrice: Number(data.atPrice) || 0,
                 minStockToMaintain: Number(data.minStockToMaintain) || 0,
-                location: data.location
+                location: data.location,
+                onlineStorePrice: Number(data.onlineStorePrice) || 0,
+                onlineStoreDescription: data.onlineStoreDescription || '',
+                rawMaterials: rawMaterials
+                    .filter(r => r.name.trim())
+                    .map(r => ({ name: r.name, qty: Number(r.qty) || 0, unit: r.unit, purchasePrice: Number(r.purchasePrice) || 0 })),
+                additionalCosts: additionalCosts
+                    .filter(c => c.name.trim())
+                    .map(c => ({ name: c.name, amount: Number(c.amount) || 0 })),
             };
 
             if (mode === 'edit' && initialData?._id) {
@@ -425,7 +467,17 @@ export default function AddItemModal({ isOpen, onClose, onSuccess, initialData, 
                                             {/* Item Code */}
                                             <div className="relative flex items-center border border-gray-300 rounded overflow-hidden focus-within:border-blue-500">
                                                 <input {...register('itemCode')} className="w-full p-2 border-none outline-none text-sm placeholder-gray-400" placeholder="Item Code" />
-                                                <button type="button" className="px-3 py-1 mr-1 bg-blue-50 text-blue-600 text-xs font-semibold rounded hover:bg-blue-100 whitespace-nowrap">Assign Code</button>
+                                                <button
+                                                    type="button"
+                                                    className="px-3 py-1 mr-1 bg-blue-50 text-blue-600 text-xs font-semibold rounded hover:bg-blue-100 whitespace-nowrap"
+                                                    onClick={() => {
+                                                        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                                                        const code = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+                                                        setValue('itemCode', code);
+                                                    }}
+                                                >
+                                                    Assign Code
+                                                </button>
                                             </div>
                                             {/* Select Unit */}
                                             <div className="flex flex-col items-center justify-center -mt-1">
@@ -486,6 +538,213 @@ export default function AddItemModal({ isOpen, onClose, onSuccess, initialData, 
 
                                     {/* Tab Content */}
                                     {activeTab === 'Pricing' && <PricingContent />}
+
+                                    {activeTab === 'Online Store' && (
+                                        <div className="bg-white p-4 rounded-lg border border-gray-200">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-1">
+                                                    <label className="text-xs text-gray-500">Online Store Price</label>
+                                                    <input
+                                                        {...register('onlineStorePrice')}
+                                                        type="number"
+                                                        className="w-full p-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-500"
+                                                        placeholder="Online Store Price"
+                                                        min={0}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-xs text-gray-500">Description</label>
+                                                    <input
+                                                        {...register('onlineStoreDescription')}
+                                                        type="text"
+                                                        className="w-full p-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-500"
+                                                        placeholder="Description"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {activeTab === 'Manufacturing' && (() => {
+                                        const rmTotal = rawMaterials.reduce((sum, r) => sum + ((Number(r.qty) || 0) * (Number(r.purchasePrice) || 0)), 0);
+                                        const acTotal = additionalCosts.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+                                        const grandTotal = rmTotal + acTotal;
+
+                                        const updateRM = (idx: number, field: keyof RawMaterialRow, val: string) => {
+                                            setRawMaterials(prev => prev.map((r, i) => i === idx ? { ...r, [field]: val } : r));
+                                        };
+                                        const updateAC = (idx: number, field: keyof AdditionalCostRow, val: string) => {
+                                            setAdditionalCosts(prev => prev.map((c, i) => i === idx ? { ...c, [field]: val } : c));
+                                        };
+
+                                        return (
+                                            <div className="space-y-4">
+                                                {/* Raw Material Table */}
+                                                <div>
+                                                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Raw Material</h3>
+                                                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                                        <table className="w-full text-sm">
+                                                            <thead className="bg-gray-50">
+                                                                <tr>
+                                                                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-8"></th>
+                                                                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">RAW MATERIAL</th>
+                                                                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 w-20">QTY</th>
+                                                                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-28">UNIT</th>
+                                                                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 w-36">PURCHASE PRICE/UNIT (₹)</th>
+                                                                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 w-32">ESTIMATED COST (₹)</th>
+                                                                    <th className="w-8"></th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-gray-100">
+                                                                {rawMaterials.map((row, idx) => {
+                                                                    const est = (Number(row.qty) || 0) * (Number(row.purchasePrice) || 0);
+                                                                    return (
+                                                                        <tr key={idx} className="bg-white">
+                                                                            <td className="px-3 py-2 text-gray-400 text-xs text-center">{idx + 1}</td>
+                                                                            <td className="px-3 py-2">
+                                                                                <input
+                                                                                    type="text"
+                                                                                    value={row.name}
+                                                                                    onChange={e => updateRM(idx, 'name', e.target.value)}
+                                                                                    className="w-full border-0 outline-none text-sm text-gray-800 placeholder-gray-300"
+                                                                                    placeholder="Search item..."
+                                                                                />
+                                                                            </td>
+                                                                            <td className="px-3 py-2">
+                                                                                <input
+                                                                                    type="number"
+                                                                                    value={row.qty}
+                                                                                    onChange={e => updateRM(idx, 'qty', e.target.value)}
+                                                                                    className="w-full border-0 outline-none text-sm text-right text-gray-800 placeholder-gray-300"
+                                                                                    placeholder="0"
+                                                                                    min={0}
+                                                                                />
+                                                                            </td>
+                                                                            <td className="px-3 py-2">
+                                                                                <select
+                                                                                    value={row.unit}
+                                                                                    onChange={e => updateRM(idx, 'unit', e.target.value)}
+                                                                                    className="w-full border border-gray-200 rounded px-1 py-0.5 text-sm text-gray-700 outline-none bg-white"
+                                                                                >
+                                                                                    {MFG_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                                                                                </select>
+                                                                            </td>
+                                                                            <td className="px-3 py-2">
+                                                                                <input
+                                                                                    type="number"
+                                                                                    value={row.purchasePrice}
+                                                                                    onChange={e => updateRM(idx, 'purchasePrice', e.target.value)}
+                                                                                    className="w-full border-0 outline-none text-sm text-right text-gray-800 placeholder-gray-300"
+                                                                                    placeholder="0"
+                                                                                    min={0}
+                                                                                />
+                                                                            </td>
+                                                                            <td className="px-3 py-2 text-right text-sm text-gray-600">{est.toFixed(2)}</td>
+                                                                            <td className="px-2 py-2">
+                                                                                {rawMaterials.length > 1 && (
+                                                                                    <button type="button" onClick={() => setRawMaterials(prev => prev.filter((_, i) => i !== idx))} className="text-gray-300 hover:text-red-400">
+                                                                                        <MinusCircle size={16} />
+                                                                                    </button>
+                                                                                )}
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                })}
+                                                            </tbody>
+                                                        </table>
+                                                        <div className="flex items-center justify-between px-3 py-2 border-t border-gray-100 bg-gray-50/50">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setRawMaterials(prev => [...prev, { name: '', qty: '', unit: 'None', purchasePrice: '' }])}
+                                                                className="text-blue-600 text-sm font-semibold flex items-center gap-1 hover:text-blue-700"
+                                                            >
+                                                                <Plus size={14} /> Add Row
+                                                            </button>
+                                                            <span className="text-sm font-semibold text-gray-700">TOTAL: ₹ {rmTotal.toFixed(2)}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Additional Costs */}
+                                                <div>
+                                                    {!showAdditionalCosts ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { setShowAdditionalCosts(true); setAdditionalCosts([{ name: '', amount: '' }]); }}
+                                                            className="flex items-center gap-1.5 text-sm text-blue-600 font-semibold bg-blue-50 hover:bg-blue-100 px-4 py-2 rounded-full transition-colors"
+                                                        >
+                                                            <Plus size={14} /> Add Additional Cost
+                                                        </button>
+                                                    ) : (
+                                                        <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                                            <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+                                                                <span className="text-sm font-semibold text-gray-700">Additional Costs</span>
+                                                                <button type="button" onClick={() => { setShowAdditionalCosts(false); setAdditionalCosts([]); }} className="text-gray-400 hover:text-red-400 text-xs">Remove</button>
+                                                            </div>
+                                                            <table className="w-full text-sm">
+                                                                <thead className="bg-gray-50/50">
+                                                                    <tr>
+                                                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">DESCRIPTION</th>
+                                                                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 w-32">AMOUNT (₹)</th>
+                                                                        <th className="w-8"></th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody className="divide-y divide-gray-100">
+                                                                    {additionalCosts.map((row, idx) => (
+                                                                        <tr key={idx} className="bg-white">
+                                                                            <td className="px-3 py-2">
+                                                                                <input
+                                                                                    type="text"
+                                                                                    value={row.name}
+                                                                                    onChange={e => updateAC(idx, 'name', e.target.value)}
+                                                                                    className="w-full border-0 outline-none text-sm text-gray-800 placeholder-gray-300"
+                                                                                    placeholder="e.g. Labour, Packaging..."
+                                                                                />
+                                                                            </td>
+                                                                            <td className="px-3 py-2">
+                                                                                <input
+                                                                                    type="number"
+                                                                                    value={row.amount}
+                                                                                    onChange={e => updateAC(idx, 'amount', e.target.value)}
+                                                                                    className="w-full border-0 outline-none text-sm text-right text-gray-800 placeholder-gray-300"
+                                                                                    placeholder="0"
+                                                                                    min={0}
+                                                                                />
+                                                                            </td>
+                                                                            <td className="px-2 py-2">
+                                                                                {additionalCosts.length > 1 && (
+                                                                                    <button type="button" onClick={() => setAdditionalCosts(prev => prev.filter((_, i) => i !== idx))} className="text-gray-300 hover:text-red-400">
+                                                                                        <MinusCircle size={16} />
+                                                                                    </button>
+                                                                                )}
+                                                                            </td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                            <div className="flex items-center justify-between px-3 py-2 border-t border-gray-100 bg-gray-50/50">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setAdditionalCosts(prev => [...prev, { name: '', amount: '' }])}
+                                                                    className="text-blue-600 text-sm font-semibold flex items-center gap-1 hover:text-blue-700"
+                                                                >
+                                                                    <Plus size={14} /> Add Row
+                                                                </button>
+                                                                <span className="text-sm font-semibold text-gray-700">TOTAL: ₹ {acTotal.toFixed(2)}</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Grand Total */}
+                                                <div className="flex justify-end">
+                                                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-5 py-3 text-sm text-amber-900">
+                                                        Total Estimated Cost (Raw Material + Additional Cost) = <span className="font-bold">₹ {grandTotal.toFixed(2)}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
 
                                     {activeTab === 'Stock' && (
                                         <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-4">

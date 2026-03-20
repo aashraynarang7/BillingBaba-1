@@ -47,21 +47,38 @@ const getTaxRate = (val: string | number) => {
 
 export default function CreateCreditNotePage({ onCancel, initialData }: { onCancel: () => void, initialData?: any }) {
     const isCancelled = initialData?.status === 'Cancelled';
+    const fromInvoice = !!initialData?.fromInvoice; // party is locked when converting from SI
+
+    const mapInvoiceItems = (raw: any[]): Item[] => raw.map((i: any, idx: number) => ({
+        id: idx + 1,
+        itemId: i.itemId,
+        name: i.name || '',
+        qty: i.quantity ?? i.qty ?? 1,
+        unit: i.unit || 'NONE',
+        price: i.priceUnit?.amount ?? i.price ?? 0,
+        discountPercent: i.discount?.percent ?? i.discountPercent ?? 0,
+        tax: i.tax?.rate ? `GST@${i.tax.rate}%` : 'NONE',
+    }));
+
     const [date, setDate] = useState<Date | undefined>(new Date());
     const [invoiceDate, setInvoiceDate] = useState<Date | undefined>();
-    const [invoiceNumber, setInvoiceNumber] = useState('');
+    const [invoiceNumber, setInvoiceNumber] = useState(initialData?.invoiceNumber || '');
     const [returnNo, setReturnNo] = useState('');
 
     const [parties, setParties] = useState<any[]>([]);
     const [allItems, setAllItems] = useState<any[]>([]);
 
     // Form State
-    const [selectedPartyId, setSelectedPartyId] = useState<string>('');
-    const [selectedPhone, setSelectedPhone] = useState('');
+    const [selectedPartyId, setSelectedPartyId] = useState<string>(initialData?.partyId || '');
+    const [selectedPhone, setSelectedPhone] = useState(initialData?.phone || '');
     const [partyOpen, setPartyOpen] = useState(false);
     const [partySearch, setPartySearch] = useState("");
 
-    const [items, setItems] = useState<Item[]>([{ id: 1, name: '', qty: 0, unit: 'NONE', price: 0, discountPercent: 0, tax: 'NONE' }]);
+    const [items, setItems] = useState<Item[]>(
+        fromInvoice && initialData?.items?.length
+            ? mapInvoiceItems(initialData.items)
+            : [{ id: 1, name: '', qty: 0, unit: 'NONE', price: 0, discountPercent: 0, tax: 'NONE' }]
+    );
     const [activeSearchIndex, setActiveSearchIndex] = useState<number | null>(null);
     const [dropdownCoords, setDropdownCoords] = useState<{ top: number; left: number } | null>(null);
     const tableWrapperRef = React.useRef<HTMLDivElement>(null);
@@ -117,9 +134,7 @@ export default function CreateCreditNotePage({ onCancel, initialData }: { onCanc
                 });
                 setAllItems(flattenedItems);
 
-                if (!initialData) {
-                    setReturnNo(`CN-${Date.now().toString().slice(-6)}`);
-                }
+                // Return number is auto-assigned sequentially by the backend
             } catch (e) {
                 console.error(e);
             }
@@ -165,15 +180,28 @@ export default function CreateCreditNotePage({ onCancel, initialData }: { onCanc
 
     const totalAmount = items.reduce((sum, item) => sum + calculateItemAmount(item), 0);
 
+    // Refund/balance logic based on original SI status
+    const siStatus = initialData?.siStatus;
+    const siBalance = Number(initialData?.siBalance ?? 0);
+    const refundAmount = fromInvoice
+        ? (siStatus === 'Paid' ? 0 : siBalance)
+        : 0;
+    const creditBalance = fromInvoice ? totalAmount : 0;
+
     const handleSave = async () => {
         const payload = {
             partyId: selectedPartyId,
-            partyName: parties.find(p => p._id === selectedPartyId)?.name || 'Unknown',
+            partyName: fromInvoice
+                ? (initialData?.partyName || 'Unknown')
+                : (parties.find(p => p._id === selectedPartyId)?.name || 'Unknown'),
             phone: selectedPhone,
             returnNo,
-            invoiceNumber, // Original Invoice
+            invoiceNumber,
+            linkedInvoiceId: fromInvoice ? initialData?.invoiceId : undefined,
             creditNoteDate: date,
             invoiceDate: invoiceDate,
+            refundAmount,
+            balanceDue: creditBalance,
             items: items.filter(i => i.name).map(i => {
                 const base = (Number(i.qty) || 0) * (Number(i.price) || 0);
                 const discountAmount = base * ((Number(i.discountPercent) || 0) / 100);
@@ -193,7 +221,6 @@ export default function CreateCreditNotePage({ onCancel, initialData }: { onCanc
             }),
             grandTotal: totalAmount,
             documentType: 'CREDIT_NOTE',
-            // Default company/etc handled by backend or api
         };
 
         try {
@@ -212,41 +239,48 @@ export default function CreateCreditNotePage({ onCancel, initialData }: { onCanc
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="flex items-start gap-4 flex-col">
                         <label className="text-sm font-medium">Party Name</label>
-                        <Popover open={partyOpen} onOpenChange={setPartyOpen}>
-                            <PopoverTrigger asChild>
-                                <Button variant="outline" className="w-full justify-between text-left font-normal">
-                                    {selectedPartyId ? parties.find(p => p._id === selectedPartyId)?.name : <span className="text-gray-400">Search Party...</span>}
-                                    <ChevronDown className="h-4 w-4 opacity-50" />
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[300px] p-0">
-                                <Command>
-                                    <CommandInput placeholder="Search party..." onValueChange={setPartySearch} />
-                                    <CommandList>
-                                        <CommandEmpty>No party found.</CommandEmpty>
-                                        <CommandGroup>
-                                            {parties.map(p => (
-                                                <CommandItem key={p._id} onSelect={() => { handlePartyChange(p._id); setPartyOpen(false); }}>
-                                                    {p.name}
+                        {fromInvoice ? (
+                            <div className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-800 font-medium text-sm">
+                                {initialData?.partyName || 'Unknown Party'}
+                                <span className="ml-2 text-xs text-gray-400 font-normal">(linked to invoice)</span>
+                            </div>
+                        ) : (
+                            <Popover open={partyOpen} onOpenChange={setPartyOpen}>
+                                <PopoverTrigger asChild>
+                                    <Button variant="outline" className="w-full justify-between text-left font-normal">
+                                        {selectedPartyId ? parties.find(p => p._id === selectedPartyId)?.name : <span className="text-gray-400">Search Party...</span>}
+                                        <ChevronDown className="h-4 w-4 opacity-50" />
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[300px] p-0">
+                                    <Command>
+                                        <CommandInput placeholder="Search party..." onValueChange={setPartySearch} />
+                                        <CommandList>
+                                            <CommandEmpty>No party found.</CommandEmpty>
+                                            <CommandGroup>
+                                                {parties.map(p => (
+                                                    <CommandItem key={p._id} onSelect={() => { handlePartyChange(p._id); setPartyOpen(false); }}>
+                                                        {p.name}
+                                                    </CommandItem>
+                                                ))}
+                                                <CommandItem
+                                                    onSelect={() => {
+                                                        setIsPartyModalOpen(true);
+                                                        setPartyOpen(false);
+                                                    }}
+                                                    className="bg-blue-50 text-blue-600 font-medium hover:bg-blue-100 cursor-pointer"
+                                                >
+                                                    <span className="flex items-center gap-2 w-full justify-center py-1">
+                                                        <Plus className="h-4 w-4" /> Add New Party
+                                                    </span>
                                                 </CommandItem>
-                                            ))}
-                                            <CommandItem
-                                                onSelect={() => {
-                                                    setIsPartyModalOpen(true);
-                                                    setPartyOpen(false);
-                                                }}
-                                                className="bg-blue-50 text-blue-600 font-medium hover:bg-blue-100 cursor-pointer"
-                                            >
-                                                <span className="flex items-center gap-2 w-full justify-center py-1">
-                                                    <Plus className="h-4 w-4" /> Add New Party
-                                                </span>
-                                            </CommandItem>
-                                        </CommandGroup>
-                                    </CommandList>
-                                </Command>
-                            </PopoverContent>
-                        </Popover>
-                        <Input placeholder="Phone No." value={selectedPhone} onChange={e => setSelectedPhone(e.target.value)} />
+                                            </CommandGroup>
+                                        </CommandList>
+                                    </Command>
+                                </PopoverContent>
+                            </Popover>
+                        )}
+                        <Input placeholder="Phone No." value={selectedPhone} onChange={e => setSelectedPhone(e.target.value)} readOnly={fromInvoice} className={fromInvoice ? 'bg-gray-50' : ''} />
                     </div>
                     <div className="space-y-3">
                         <div className="flex items-center justify-end"><label className="text-sm text-gray-500 w-32">Return No.</label><Input value={returnNo} onChange={e => setReturnNo(e.target.value)} className="w-48 bg-gray-50" /></div>
@@ -377,6 +411,27 @@ export default function CreateCreditNotePage({ onCancel, initialData }: { onCanc
                     <div className="space-y-3">
                         <div className="flex items-center justify-end gap-4"><div className="flex items-center gap-2"><Checkbox id="roundOff" /><label htmlFor="roundOff" className="text-sm font-medium">Round Off</label></div><Input type="number" placeholder="0" className="w-24" /></div>
                         <div className="flex items-center justify-end gap-4"><label className="text-sm font-bold">Total</label><Input value={totalAmount.toFixed(2)} className="w-48 font-bold text-lg h-11" disabled /></div>
+                        {fromInvoice && (
+                            <>
+                                <div className="flex items-center justify-end gap-4">
+                                    <label className="text-sm text-gray-500">Remaining Amount</label>
+                                    <Input value={`₹ ${creditBalance.toFixed(2)}`} className="w-48 bg-gray-50 text-gray-700" disabled />
+                                </div>
+                                <div className="flex items-center justify-end gap-4">
+                                    <label className="text-sm text-gray-500">Total Paid</label>
+                                    <Input value={refundAmount.toFixed(2)} className="w-48 bg-gray-50" disabled />
+                                </div>
+                                {refundAmount > 0 && (
+                                    <div className="flex items-center justify-end gap-4 text-xs text-gray-400">
+                                        <span>Linked Amount: ₹ {refundAmount.toFixed(2)}</span>
+                                    </div>
+                                )}
+                                <div className="flex items-center justify-end gap-4">
+                                    <label className="text-sm font-bold text-gray-800">Balance</label>
+                                    <Input value={(creditBalance - refundAmount).toFixed(2)} className="w-48 font-bold" disabled />
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>

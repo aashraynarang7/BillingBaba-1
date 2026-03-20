@@ -208,11 +208,17 @@ const createSale = async (req, res) => {
 
             // Effect 2: Update Party Balance (Decrease Receivables)
             if (creditNote.partyId) {
-                // Credit Note decreases the party's debt to us (or increases our debt to them)
-                // Assuming positive balance means they owe us.
-                // Credit Note amount reduces this balance.
                 const amount = Number(creditNote.grandTotal) || 0;
                 await Party.findByIdAndUpdate(creditNote.partyId, { $inc: { currentBalance: -amount } }, { session });
+            }
+
+            // Effect 3: Mark linked Sale Invoice as Paid (balance = 0)
+            if (creditNote.linkedInvoiceId) {
+                await SaleInvoice.findByIdAndUpdate(
+                    creditNote.linkedInvoiceId,
+                    { balanceDue: 0, status: 'Paid', isPaid: true },
+                    { session }
+                );
             }
 
             await session.commitTransaction();

@@ -1,9 +1,10 @@
 "use client"
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { Building2, Printer, QrCode, MoreHorizontal, ChevronDown, Search, Filter } from 'lucide-react'
+import { Building2, Printer, QrCode, MoreHorizontal, ChevronDown, Search, Filter, ArrowRightLeft } from 'lucide-react'
 import AddBankAccountModal from '@/components/dashboard/AddBankAccountModal'
+import BankToBankTransferModal from '@/components/dashboard/BankToBankTransferModal'
 import { fetchBankAccounts, fetchBankTransactions } from '@/lib/api'
 import { format } from 'date-fns'
 
@@ -34,6 +35,9 @@ const BankAccountsPage = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [txLoading, setTxLoading] = useState(false)
+  const [isTransferOpen, setIsTransferOpen] = useState(false)
+  const [isDepositDropdownOpen, setIsDepositDropdownOpen] = useState(false)
+  const depositDropdownRef = useRef<HTMLDivElement>(null)
 
   const loadAccounts = useCallback(async () => {
     const companyId = localStorage.getItem('activeCompanyId')
@@ -193,9 +197,34 @@ const BankAccountsPage = () => {
                     <p className="text-sm text-gray-500">{selectedAccount.bankName}</p>
                   )}
                 </div>
-                <Button variant="outline" size="sm" className="gap-2 border-red-400 text-red-600 hover:bg-red-50">
-                  Deposit / Withdraw <ChevronDown className="h-4 w-4" />
-                </Button>
+                <div className="relative" ref={depositDropdownRef}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 border-red-400 text-red-600 hover:bg-red-50"
+                    onClick={() => setIsDepositDropdownOpen(prev => !prev)}
+                  >
+                    Deposit / Withdraw <ChevronDown className="h-4 w-4" />
+                  </Button>
+                  {isDepositDropdownOpen && (
+                    <div className="absolute top-full right-0 mt-1 w-52 bg-white rounded-lg shadow-xl border border-gray-200 z-30">
+                      <ul className="p-1 text-sm text-gray-700">
+                        <li>
+                          <button
+                            className="w-full flex items-center gap-2 text-left px-3 py-2 hover:bg-gray-100 rounded-md"
+                            onClick={() => {
+                              setIsDepositDropdownOpen(false);
+                              setIsTransferOpen(true);
+                            }}
+                          >
+                            <ArrowRightLeft size={15} className="text-blue-600" />
+                            Bank to Bank Transfer
+                          </button>
+                        </li>
+                      </ul>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Account Details Cards */}
@@ -296,6 +325,14 @@ const BankAccountsPage = () => {
           )}
         </div>
       </div>
+
+      <BankToBankTransferModal
+        isOpen={isTransferOpen}
+        onClose={() => setIsTransferOpen(false)}
+        accounts={accounts}
+        defaultFromAccount={selectedAccount?.accountName}
+        onSuccess={loadAccounts}
+      />
     </div>
   )
 }

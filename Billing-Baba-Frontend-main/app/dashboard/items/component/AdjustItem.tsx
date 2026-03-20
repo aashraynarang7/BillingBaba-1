@@ -1,114 +1,210 @@
-// File: components/component/AdjustItem.tsx
+"use client";
 
-import { useState } from 'react';
-import { X, Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
-import { DayPicker } from 'react-day-picker';
+import { useState, useEffect } from 'react';
+import { X, Calendar as CalendarIcon, ChevronDown, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { adjustStock } from '@/lib/api';
+import { toast } from '@/components/ui/use-toast';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
-// Props definition
+const UNITS = ['Pcs', 'Box', 'Kg', 'Gm', 'Ltr', 'Mtr', 'Ft', 'Dozen', 'Pack', 'Set'];
+const GODOWNS = ['Main Godown'];
+
 interface AdjustItemProps {
-  isOpen: boolean;
-  onClose: () => void;
+    isOpen: boolean;
+    onClose: () => void;
+    itemId: string;
+    itemName: string;
+    itemUnit?: string;
+    onSuccess?: () => void;
 }
 
-const AdjustItem = ({ isOpen, onClose }: AdjustItemProps) => {
-  const [adjustmentType, setAdjustmentType] = useState<'add' | 'reduce'>('add');
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date('2025-09-04'));
-  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+const AdjustItem = ({ isOpen, onClose, itemId, itemName, itemUnit, onSuccess }: AdjustItemProps) => {
+    const [adjustmentType, setAdjustmentType] = useState<'ADD' | 'REDUCE'>('ADD');
+    const [date, setDate] = useState<Date>(new Date());
+    const [qty, setQty] = useState('');
+    const [unit, setUnit] = useState(itemUnit || 'Pcs');
+    const [price, setPrice] = useState('');
+    const [details, setDetails] = useState('');
+    const [godown, setGodown] = useState('Main Godown');
+    const [isSaving, setIsSaving] = useState(false);
 
-  if (!isOpen) return null;
+    // Reset form when opened for a new item
+    useEffect(() => {
+        if (isOpen) {
+            setQty('');
+            setPrice('');
+            setDetails('');
+            setAdjustmentType('ADD');
+            setDate(new Date());
+            setUnit(itemUnit || 'Pcs');
+        }
+    }, [isOpen, itemId, itemUnit]);
 
-  // Toggle switch component
-  const StockToggle = () => (
-    <div className="flex items-center space-x-3 text-sm font-semibold">
-      <span onClick={() => setAdjustmentType('add')} className={`cursor-pointer transition-colors ${adjustmentType === 'add' ? 'text-[var(--secondary-blue)]' : 'text-gray-500'}`}>Add Stock</span>
-      <button type="button" className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none ${adjustmentType === 'add' ? 'bg-[var(--secondary-blue)]' : 'bg-gray-300'}`} onClick={() => setAdjustmentType((prev) => (prev === 'add' ? 'reduce' : 'add'))}>
-        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-300 ease-in-out ${adjustmentType === 'add' ? 'translate-x-5' : 'translate-x-0'}`} />
-      </button>
-      <span onClick={() => setAdjustmentType('reduce')} className={`cursor-pointer transition-colors ${adjustmentType === 'reduce' ? 'text-[var(--secondary-blue)]' : 'text-gray-500'}`}>Reduce Stock</span>
-    </div>
-  );
+    if (!isOpen) return null;
 
-  return (
-    // Main modal overlay
-    <div className="fixed inset-0 z-50 flex justify-center items-center p-4 bg-opacity-30 backdrop-blur-xs">
-      
-      {/* Overlay to close the calendar when it's open */}
-      {isCalendarOpen && (
-        <div 
-          className="fixed inset-0 z-[51]"
-          onClick={() => setIsCalendarOpen(false)} 
-        />
-      )}
+    const handleSave = async () => {
+        if (!qty || Number(qty) <= 0) {
+            toast({ title: 'Please enter a valid quantity', variant: 'destructive' });
+            return;
+        }
+        setIsSaving(true);
+        try {
+            await adjustStock({
+                itemId,
+                adjustmentQty: Number(qty),
+                type: adjustmentType,
+                remarks: details || undefined,
+            });
+            toast({
+                title: `Stock ${adjustmentType === 'ADD' ? 'added' : 'reduced'} successfully`,
+                className: 'bg-green-500 text-white',
+            });
+            onSuccess?.();
+            onClose();
+        } catch (err: any) {
+            toast({ title: err.message || 'Failed to adjust stock', variant: 'destructive' });
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
-      {/* Main Modal Container */}
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl transform transition-all z-[52]">
-        <div className="flex justify-between items-center px-6 py-4">
-          <div className="flex items-center gap-6">
-            <h2 className="text-xl font-bold text-gray-800">Stock Adjustment</h2>
-            <StockToggle />
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 transition-colors"><X size={24} /></button>
-        </div>
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4">
 
-        <div className="p-6 pt-2">
-          <div className="flex justify-between items-end pb-4 border-b border-gray-200">
-            <div>
-              <label className="text-xs text-gray-500">Item Name</label>
-              <p className="mt-1 text-md font-semibold text-gray-900">Sample Item</p>
-            </div>
-            
-            <div className="relative w-48">
-              <div className={`relative border rounded-md px-3 py-2 transition-colors ${isCalendarOpen ? 'border-[var(--secondary-blue)]' : 'border-gray-300'}`}>
-                <label className="absolute -top-2 left-2 -mt-px inline-block bg-white px-1 text-xs font-medium text-gray-500">Adjustment Date</label>
-                <button type="button" onClick={() => setIsCalendarOpen(!isCalendarOpen)} className="block w-full text-left border-0 p-0 text-gray-900 focus:ring-0 sm:text-sm bg-transparent">
-                  {selectedDate ? format(selectedDate, 'dd/MM/yyyy') : 'Select Date'}
-                </button>
-                <CalendarIcon className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={18} />
-              </div>
-              
-              {isCalendarOpen && (
-                <div 
-                  className="absolute top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-[53]"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <DayPicker
-                    mode="single"
-                    selected={selectedDate}
-                    onSelect={(date) => {
-                      setSelectedDate(date);
-                      setIsCalendarOpen(false);
-                    }}
-                    initialFocus
-                    classNames={{
-                      root: 'p-2', nav: 'flex items-center justify-between p-2 bg-gray-100 rounded-t-md',
-                      nav_button: 'h-7 w-7 flex items-center justify-center rounded-full hover:bg-gray-200 transition-colors',
-                      caption_label: 'font-bold text-indigo-800', head_row: 'flex justify-center mt-2',
-                      head_cell: 'w-9 h-9 flex items-center justify-center font-semibold text-sm text-gray-700',
-                      table: 'w-full border-collapse mt-1', tbody: 'text-center', row: 'flex w-full mt-1', cell: 'p-0',
-                      day: 'h-9 w-9 flex items-center justify-center rounded-md border border-gray-200 transition-colors hover:bg-gray-100',
-                      day_selected: 'bg-yellow-300 text-gray-900 font-bold border-transparent hover:bg-yellow-400',
-                      day_today: 'font-bold text-[var(--secondary-blue)]', day_outside: 'text-gray-400 opacity-70',
-                    }}
-                  />
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b">
+                    <div className="flex items-center gap-6">
+                        <h2 className="text-xl font-bold text-gray-800">Stock Adjustment</h2>
+
+                        {/* Add / Reduce toggle */}
+                        <div className="flex items-center gap-3 text-sm font-semibold">
+                            <span
+                                className={`cursor-pointer transition-colors ${adjustmentType === 'ADD' ? 'text-blue-600' : 'text-gray-400'}`}
+                                onClick={() => setAdjustmentType('ADD')}
+                            >
+                                Add Stock
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setAdjustmentType(prev => prev === 'ADD' ? 'REDUCE' : 'ADD')}
+                                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${adjustmentType === 'ADD' ? 'bg-blue-600' : 'bg-gray-300'}`}
+                            >
+                                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${adjustmentType === 'ADD' ? 'translate-x-5' : 'translate-x-0'}`} />
+                            </button>
+                            <span
+                                className={`cursor-pointer transition-colors ${adjustmentType === 'REDUCE' ? 'text-blue-600' : 'text-gray-400'}`}
+                                onClick={() => setAdjustmentType('REDUCE')}
+                            >
+                                Reduce Stock
+                            </span>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-700 transition-colors">
+                        <X size={22} />
+                    </button>
                 </div>
-              )}
+
+                {/* Body */}
+                <div className="px-6 pt-4 pb-2">
+                    {/* Item Name + Godown + Date row */}
+                    <div className="flex items-end justify-between pb-4 border-b border-gray-200">
+                        <div>
+                            <p className="text-xs text-gray-500 mb-0.5">Item Name</p>
+                            <p className="text-base font-semibold text-gray-900">{itemName}</p>
+                        </div>
+
+                        <div className="flex items-end gap-3">
+                            {/* Godown */}
+                            <div className="relative">
+                                <label className="absolute -top-2 left-2 bg-white px-1 text-[10px] text-gray-500 font-medium">Godown</label>
+                                <Select value={godown} onValueChange={setGodown}>
+                                    <SelectTrigger className="w-44 text-sm">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {GODOWNS.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {/* Adjustment Date */}
+                            <div className="relative">
+                                <label className="absolute -top-2 left-2 bg-white px-1 text-[10px] text-gray-500 font-medium z-10">Adjustment Date</label>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <button className="flex items-center gap-2 w-40 border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-800 hover:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                            <span className="flex-1 text-left">{format(date, 'dd/MM/yyyy')}</span>
+                                            <CalendarIcon size={16} className="text-gray-400 flex-shrink-0" />
+                                        </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0" align="end">
+                                        <Calendar mode="single" selected={date} onSelect={d => d && setDate(d)} initialFocus />
+                                    </PopoverContent>
+                                </Popover>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Qty + Unit + Price + Details */}
+                    <div className="flex items-center gap-3 mt-5">
+                        <Input
+                            type="number"
+                            placeholder="Total Qty"
+                            value={qty}
+                            onChange={e => setQty(e.target.value)}
+                            className="w-36"
+                            min={0}
+                        />
+
+                        {/* Unit selector */}
+                        <Select value={unit} onValueChange={setUnit}>
+                            <SelectTrigger className="w-24 text-sm">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {UNITS.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+
+                        <Input
+                            type="number"
+                            placeholder="At Price"
+                            value={price}
+                            onChange={e => setPrice(e.target.value)}
+                            className="w-36"
+                            min={0}
+                        />
+
+                        <Input
+                            type="text"
+                            placeholder="Details"
+                            value={details}
+                            onChange={e => setDetails(e.target.value)}
+                            className="flex-1"
+                        />
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="flex justify-end px-6 py-4">
+                    <Button
+                        onClick={handleSave}
+                        disabled={isSaving}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-10 font-semibold"
+                    >
+                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                        Save
+                    </Button>
+                </div>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-            <input type="text" placeholder="Total Qty" className="w-full p-2 border border-gray-300 rounded-md text-sm" />
-            <input type="text" placeholder="At Price" className="w-full p-2 border border-gray-300 rounded-md text-sm" />
-            <input type="text" placeholder="Details" className="w-full p-2 border border-gray-300 rounded-md text-sm" />
-          </div>
-
-          <div className="flex justify-end mt-8">
-            <button onClick={onClose} className="bg-[var(--secondary-blue)] text-white font-bold py-2 px-8 rounded-lg shadow-lg hover:opacity-90 transition-opacity">Save</button>
-          </div>
         </div>
-      </div>
-    </div>
-  );
+    );
 };
 
 export default AdjustItem;

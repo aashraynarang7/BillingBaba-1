@@ -73,6 +73,16 @@ export const fetchItemById = async (id: string) => {
     return response.json();
 };
 
+export const adjustStock = async (data: { itemId: string; adjustmentQty: number; type: 'ADD' | 'REDUCE'; remarks?: string }) => {
+    const response = await fetch(`${API_BASE_URL}/inventory/adjust`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: getBody(data),
+    });
+    if (!response.ok) throw new Error('Failed to adjust stock');
+    return response.json();
+};
+
 export const createItem = async (data: any) => {
     const isFormData = data instanceof FormData;
     const response = await fetch(`${API_BASE_URL}/items`, {
@@ -417,6 +427,22 @@ export const deleteBankAccount = async (id: string) => {
     return response.json();
 };
 
+export const createBankTransfer = async (data: {
+    companyId: string;
+    fromAccount: string;
+    toAccount: string;
+    amount: number;
+    date?: string;
+    description?: string;
+    imageUrl?: string;
+}) => {
+    const response = await fetch(`${API_BASE_URL}/bank-accounts/transfer`, {
+        method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error('Failed to create bank transfer');
+    return response.json();
+};
+
 export const sendOtp = async (phoneNumber: string) => {
     const response = await fetch(`${API_BASE_URL}/auth/send-otp`, {
         method: 'POST',
@@ -642,3 +668,90 @@ export const deleteCategory = async (id: string) => {
     if (!response.ok) throw new Error('Failed to delete category');
     return response.json();
 };
+
+export const fetchBulkItemData = async () => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    const response = await fetch(`${API_BASE_URL}/items/bulk/data?companyId=${companyId}`, { headers: getHeaders() });
+    if (!response.ok) throw new Error('Failed to fetch bulk item data');
+    return response.json();
+};
+
+export const fetchInactiveItemData = async () => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    const response = await fetch(`${API_BASE_URL}/items/bulk/inactive-data?companyId=${companyId}`, { headers: getHeaders() });
+    if (!response.ok) throw new Error('Failed to fetch inactive item data');
+    return response.json();
+};
+
+export const bulkMarkActive = async (itemIds: string[]) => {
+    const response = await fetch(`${API_BASE_URL}/items/bulk/active`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: getBody({ itemIds }),
+    });
+    if (!response.ok) throw new Error('Failed to mark items active');
+    return response.json();
+};
+
+export const bulkMarkInactive = async (itemIds: string[]) => {
+    const response = await fetch(`${API_BASE_URL}/items/bulk/inactive`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: getBody({ itemIds }),
+    });
+    if (!response.ok) throw new Error('Failed to mark items inactive');
+    return response.json();
+};
+
+export const bulkAssignCode = async (itemIds: string[]) => {
+    const response = await fetch(`${API_BASE_URL}/items/bulk/assign-code`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: getBody({ itemIds }),
+    });
+    if (!response.ok) throw new Error('Failed to assign item codes');
+    return response.json();
+};
+
+// ── WhatsApp ──────────────────────────────────────────────────────────────────
+export const getWhatsAppStatus = async () => {
+    const res = await fetch(`${API_BASE_URL}/whatsapp/status`, { headers: getHeaders() });
+    return res.json();
+};
+
+export const connectWhatsApp = async () => {
+    const res = await fetch(`${API_BASE_URL}/whatsapp/connect`, { method: 'POST', headers: getHeaders() });
+    return res.json();
+};
+
+export const getWhatsAppQR = async () => {
+    const res = await fetch(`${API_BASE_URL}/whatsapp/qr`, { headers: getHeaders() });
+    if (!res.ok) return null;
+    return res.json(); // { qr: 'data:image/png;base64,...' }
+};
+
+export const sendWhatsAppMessage = async (phone: string, message: string) => {
+    const res = await fetch(`${API_BASE_URL}/whatsapp/send`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ phone, message }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || 'Failed to send');
+    return res.json();
+};
+
+export const sendWhatsAppBulk = async (recipients: { phone: string; message: string; partyName: string }[]) => {
+    const res = await fetch(`${API_BASE_URL}/whatsapp/send-bulk`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ recipients }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || 'Bulk send failed');
+    return res.json(); // { results: [{ phone, partyName, success, error? }] }
+};
+
+export const logoutWhatsApp = async () => {
+    const res = await fetch(`${API_BASE_URL}/whatsapp/logout`, { method: 'POST', headers: getHeaders() });
+    return res.json();
+};
+

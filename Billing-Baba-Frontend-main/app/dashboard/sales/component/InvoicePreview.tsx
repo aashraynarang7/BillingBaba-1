@@ -49,8 +49,21 @@ const numberToWords = (num: number): string => {
     return str.trim();
 };
 
+const DOC_TITLES: Record<string, string> = {
+    INVOICE: 'Tax Invoice',
+    PROFORMA: 'Proforma Invoice',
+    ESTIMATE: 'Estimate / Quotation',
+    ORDER: 'Sale Order',
+    PURCHASE_ORDER: 'Purchase Order',
+    PURCHASE_INVOICE: 'Purchase Invoice',
+    DEBIT_NOTE: 'Debit Note',
+    EXPENSE: 'Expense',
+    PURCHASE_FA: 'Purchase Fixed Assets',
+};
+
 export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: InvoicePreviewProps) => {
     const componentRef = useRef<HTMLDivElement>(null);
+    const docTitle = DOC_TITLES[type] || 'Tax Invoice';
     const [activeTheme, setActiveTheme] = useState('tally');
     const [classicOpen, setClassicOpen] = useState(true);
     const [vintageOpen, setVintageOpen] = useState(false);
@@ -827,9 +840,9 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
                     </div>
                 </div>
 
-                {/* Tax Invoice Title */}
+                {/* Doc Title */}
                 <div className="text-center font-bold text-sm py-2" style={{ color: themeColor }}>
-                    Tax Invoice
+                    {docTitle}
                 </div>
 
                 {/* Bill To / Invoice Details */}
@@ -989,7 +1002,7 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
 
                 {/* Title */}
                 <div className="text-center font-bold tracking-widest uppercase py-1.5 border-b-2 border-black text-[11px]">
-                    TAX INVOICE
+                    {docTitle.toUpperCase()}
                 </div>
 
                 {/* Company + Invoice Details */}
@@ -1205,7 +1218,7 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
             <div className="w-full text-[9px] font-sans text-gray-900 bg-white border border-gray-400">
                 {/* Title */}
                 <div className="text-center font-bold text-sm py-1.5 border-b border-gray-400">
-                    Tax Invoice
+                    {docTitle}
                 </div>
 
                 {/* Company + Invoice Details */}

@@ -24,8 +24,20 @@ import {
   ChevronLeft,
   ChevronRight,
   Search,
+  Building2,
+  Edit2,
+  RefreshCw,
+  LogOut,
 } from "lucide-react";
 import SearchModal from "./SearchModal";
+import { useRouter } from "next/navigation";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface SubItem {
   name: string;
@@ -159,10 +171,12 @@ export default function Sidebar({ isMobileMenuOpen }: SidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentView = searchParams.get("view");
+  const router = useRouter();
 
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [companyName, setCompanyName] = useState<string>("Company");
   const size = useWindowSize();
   const isMobile = size.width ? size.width < 768 : false;
 
@@ -178,6 +192,19 @@ export default function Sidebar({ isMobileMenuOpen }: SidebarProps) {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
+
+  // Fetch active company name
+  useEffect(() => {
+    const companyId = localStorage.getItem("activeCompanyId");
+    if (!companyId) return;
+    fetch(`http://localhost:5000/api/companies`)
+      .then(r => r.json())
+      .then((companies: any[]) => {
+        const found = companies.find((c: any) => c._id === companyId);
+        if (found?.name) setCompanyName(found.name);
+      })
+      .catch(() => {});
+  }, [pathname]);
 
   useEffect(() => {
     const activeParent = menuItems.find(
@@ -263,7 +290,7 @@ export default function Sidebar({ isMobileMenuOpen }: SidebarProps) {
             </AnimatePresence>
           </div>
 
-          <nav className="flex-grow px-3 thin-scrollbar">
+          <nav className="flex-grow overflow-y-auto px-3 thin-scrollbar">
             <ul>
               {menuItems.map((item) => {
                 const isAnySubItemActive = item.subItems
@@ -374,6 +401,57 @@ export default function Sidebar({ isMobileMenuOpen }: SidebarProps) {
               })}
             </ul>
           </nav>
+
+          {/* Company name footer */}
+          <div className="flex-shrink-0 border-t border-gray-700 px-3 py-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={`flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-gray-300 hover:bg-gray-800 hover:text-white transition-colors ${!showText ? "justify-center" : ""}`}>
+                  {/* Avatar */}
+                  <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white uppercase">
+                    {companyName.charAt(0)}
+                  </div>
+                  <AnimatePresence>
+                    {showText && (
+                      <motion.div
+                        key="company-name"
+                        initial={{ opacity: 0, width: 0 }}
+                        animate={{ opacity: 1, width: "auto" }}
+                        exit={{ opacity: 0, width: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="flex flex-1 items-center justify-between overflow-hidden"
+                      >
+                        <span className="truncate text-sm font-medium">{companyName}</span>
+                        <ChevronRight className="h-4 w-4 flex-shrink-0 text-gray-400" />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="right" align="end" className="w-52 mb-1">
+                <div className="px-3 py-2 border-b">
+                  <p className="text-xs text-gray-500">Active Company</p>
+                  <p className="font-semibold text-sm text-gray-800 truncate">{companyName}</p>
+                </div>
+                <DropdownMenuItem onClick={() => router.push("/dashboard/company/new")} className="gap-2 cursor-pointer">
+                  <Edit2 className="h-4 w-4" />
+                  <span>Edit Profile</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push("/dashboard/company")} className="gap-2 cursor-pointer">
+                  <RefreshCw className="h-4 w-4" />
+                  <span>Switch Company</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="gap-2 cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
+                  onClick={() => { localStorage.clear(); router.push("/login"); }}
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Logout</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </motion.aside>
     </>

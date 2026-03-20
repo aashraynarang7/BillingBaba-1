@@ -51,6 +51,7 @@ app.use('/api/reports', require('./src/routes/reportRoutes'));
 app.use('/api/expense-categories', require('./src/routes/expenseCategoryRoutes'));
 app.use('/api/expense-items', require('./src/routes/expenseItemRoutes'));
 app.use('/api/bank-accounts', require('./src/routes/bankAccountRoutes'));
+app.use('/api/whatsapp', require('./src/routes/whatsappRoutes'));
 
 // Start Server
 app.listen(PORT, () => {

@@ -30,7 +30,7 @@ export default function DashboardLayout({
 }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const pathname = usePathname();
-  const isCompanyPage = pathname?.startsWith('/dashboard/company') || false;
+  const isCompanyPage = pathname === '/dashboard/company';
   const isPosPage = pathname?.startsWith('/dashboard/pos') || false;
 
   const hideSidebarAndHeader = isCompanyPage || isPosPage;

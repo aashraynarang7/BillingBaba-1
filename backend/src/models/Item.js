@@ -17,6 +17,11 @@ const itemSchema = new mongoose.Schema({
         trim: true
     },
 
+    isActive: {
+        type: Boolean,
+        default: true
+    },
+
     // --- References ---
     product: {
         type: mongoose.Schema.Types.ObjectId,

@@ -4,6 +4,7 @@ export interface Transaction {
   invoiceNo: number | string;
   partyName: string;
   partyId?: string;
+  phone?: string;
   transactionType: 'Sale' | 'Purchase' | 'Return' | 'Sale Order' | 'Proforma Invoice' | 'Estimate/Quotation' | 'Delivery Challan' | 'Payment In' | 'Credit Note' | 'Purchase Order' | 'Purchase Bill';
   paymentType: 'Cash' | 'Online' | 'Cheque' | string;
   amount: number;

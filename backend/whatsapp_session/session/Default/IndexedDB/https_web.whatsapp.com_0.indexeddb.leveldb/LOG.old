@@ -1,0 +1,50 @@
+2026/03/19-13:04:58.394 1f72c Reusing MANIFEST C:\CMT AI projects\BillingBaba\backend\whatsapp_session\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/03/19-13:04:58.395 1f72c Recovering log #227
+2026/03/19-13:04:58.598 1f72c Reusing old log C:\CMT AI projects\BillingBaba\backend\whatsapp_session\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/000227.log 
+2026/03/19-13:05:14.299 1babc Level-0 table #235: started
+2026/03/19-13:05:14.506 1babc Level-0 table #235: 1115826 bytes OK
+2026/03/19-13:05:14.509 1babc Delete type=0 #227
+2026/03/19-13:05:14.518 1babc Compacting 1@1 + 6@2 files
+2026/03/19-13:05:15.200 1babc Generated table #236@1: 71281 keys, 2214902 bytes
+2026/03/19-13:05:15.566 1babc Generated table #237@1: 50417 keys, 2214482 bytes
+2026/03/19-13:05:16.162 1babc Generated table #238@1: 64748 keys, 2238292 bytes
+2026/03/19-13:05:16.383 1babc Generated table #239@1: 8492 keys, 2152588 bytes
+2026/03/19-13:05:16.899 1babc Generated table #240@1: 29152 keys, 2213193 bytes
+2026/03/19-13:05:17.107 1babc Generated table #241@1: 19003 keys, 842052 bytes
+2026/03/19-13:05:17.108 1babc Compacted 1@1 + 6@2 files => 11875509 bytes
+2026/03/19-13:05:17.141 1babc compacted to: files[ 0 0 7 0 0 0 0 ]
+2026/03/19-13:05:17.142 1babc Delete type=2 #224
+2026/03/19-13:05:17.142 1babc Delete type=2 #225
+2026/03/19-13:05:17.142 1babc Delete type=2 #229
+2026/03/19-13:05:17.142 1babc Delete type=2 #230
+2026/03/19-13:05:17.142 1babc Delete type=2 #231
+2026/03/19-13:05:17.142 1babc Delete type=2 #232
+2026/03/19-13:05:17.143 1babc Delete type=2 #235
+2026/03/19-13:05:28.357 1f72c Level-0 table #243: started
+2026/03/19-13:05:28.569 1f72c Level-0 table #243: 1183877 bytes OK
+2026/03/19-13:05:28.633 1f72c Delete type=0 #234
+2026/03/19-13:05:29.460 1f614 Compacting 1@1 + 4@2 files
+2026/03/19-13:05:29.714 1f614 Generated table #244@1: 71856 keys, 2212644 bytes
+2026/03/19-13:05:30.070 1f614 Generated table #245@1: 63546 keys, 2227139 bytes
+2026/03/19-13:05:30.391 1f614 Generated table #246@1: 64909 keys, 2234830 bytes
+2026/03/19-13:05:30.616 1f614 Generated table #247@1: 20578 keys, 2173883 bytes
+2026/03/19-13:05:30.685 1f614 Generated table #248@1: 404 keys, 556687 bytes
+2026/03/19-13:05:30.685 1f614 Compacted 1@1 + 4@2 files => 9405183 bytes
+2026/03/19-13:05:30.687 1f614 compacted to: files[ 0 0 8 0 0 0 0 ]
+2026/03/19-13:05:30.690 1f614 Delete type=2 #236
+2026/03/19-13:05:30.690 1f614 Delete type=2 #237
+2026/03/19-13:05:30.690 1f614 Delete type=2 #238
+2026/03/19-13:05:30.691 1f614 Delete type=2 #239
+2026/03/19-13:05:30.691 1f614 Delete type=2 #243
+2026/03/19-13:05:37.625 1babc Level-0 table #250: started
+2026/03/19-13:05:38.321 1babc Level-0 table #250: 1107553 bytes OK
+2026/03/19-13:05:38.611 1babc Delete type=0 #242
+2026/03/19-13:05:38.794 1f614 Compacting 1@1 + 2@2 files
+2026/03/19-13:05:39.549 1f614 Generated table #251@1: 65230 keys, 2204596 bytes
+2026/03/19-13:05:40.171 1f614 Generated table #252@1: 75422 keys, 2240448 bytes
+2026/03/19-13:05:40.221 1f614 Generated table #253@1: 4476 keys, 314103 bytes
+2026/03/19-13:05:40.222 1f614 Compacted 1@1 + 2@2 files => 4759147 bytes
+2026/03/19-13:05:40.223 1f614 compacted to: files[ 0 0 9 0 0 0 0 ]
+2026/03/19-13:05:40.223 1f614 Delete type=2 #244
+2026/03/19-13:05:40.223 1f614 Delete type=2 #245
+2026/03/19-13:05:40.224 1f614 Delete type=2 #250

@@ -9,20 +9,26 @@ import CreateCreditNotePage from './CreateCreditNotePage';
 import TransactionsTable from '../component/TransactionsTable';
 import { Transaction } from '@/lib/types';
 import FilterBar from '../component/FilterBar';
+import { InvoicePreview } from '../component/InvoicePreview';
 import { toast } from '@/components/ui/use-toast';
 
 export default function CreditNotePage() {
     const [isCreating, setIsCreating] = useState(false);
+    const [editingDoc, setEditingDoc] = useState<any>(null);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
+    const [fullDocs, setFullDocs] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filters, setFilters] = useState<any>({});
+    const [printInvoiceData, setPrintInvoiceData] = useState<any>(null);
 
     const loadData = async () => {
         setIsLoading(true);
         try {
             const data = await fetchCreditNotes(filters);
+            setFullDocs(data);
             const mapped: Transaction[] = data.map((d: any) => ({
                 id: d._id,
+                ...d,
                 date: d.creditNoteDate ? format(new Date(d.creditNoteDate), 'dd/MM/yyyy') : '-',
                 invoiceNo: d.returnNo || '-',
                 partyName: d.partyName || d.partyId?.name || 'Unknown',
@@ -41,8 +47,8 @@ export default function CreditNotePage() {
     };
 
     useEffect(() => {
-        if (!isCreating) loadData();
-    }, [isCreating, filters]);
+        if (!isCreating && !editingDoc) loadData();
+    }, [isCreating, editingDoc, filters]);
 
     const handleDelete = async (id: string) => {
         if (!confirm("Are you sure?")) return;
@@ -55,16 +61,34 @@ export default function CreditNotePage() {
         }
     };
 
-    if (isCreating) {
+    const handleEdit = (id: string) => {
+        const doc = fullDocs.find(d => d._id === id);
+        if (doc) setEditingDoc(doc);
+    };
+
+    const handlePrint = (id: string) => {
+        const doc = fullDocs.find(d => d._id === id);
+        if (doc) setPrintInvoiceData(doc);
+    };
+
+    const handleDuplicate = (id: string) => {
+        const doc = fullDocs.find(d => d._id === id);
+        if (doc) setEditingDoc({ ...doc, _id: undefined, returnNo: '', creditNoteDate: new Date(), linkedInvoiceId: undefined });
+    };
+
+    if (isCreating || editingDoc) {
         return (
             <div className="bg-slate-50 p-4 sm:p-6 lg:p-8 min-h-screen">
-                <h1 className="text-2xl font-bold text-gray-800 mb-6">Create Credit Note</h1>
-                <CreateCreditNotePage onCancel={() => setIsCreating(false)} />
+                <CreateCreditNotePage
+                    onCancel={() => { setIsCreating(false); setEditingDoc(null); }}
+                    initialData={editingDoc}
+                />
             </div>
         );
     }
 
     return (
+        <>
         <div className="space-y-6">
             <div className="flex justify-between items-center p-4 bg-white rounded-lg shadow-sm">
                 <div className="flex items-center gap-4">
@@ -80,8 +104,22 @@ export default function CreditNotePage() {
             <TransactionsTable
                 transactions={transactions}
                 showToolbar={true}
+                onEdit={handleEdit}
+                onView={handleEdit}
                 onDelete={handleDelete}
+                onPrint={handlePrint}
+                onDuplicate={handleDuplicate}
             />
         </div>
+
+        {printInvoiceData && (
+            <InvoicePreview
+                isOpen={!!printInvoiceData}
+                onClose={() => setPrintInvoiceData(null)}
+                data={printInvoiceData}
+                type="INVOICE"
+            />
+        )}
+        </>
     );
 }

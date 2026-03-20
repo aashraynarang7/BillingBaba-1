@@ -1,7 +1,8 @@
 "use client"
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Lock } from 'lucide-react';
+import WhatsAppPartyModal from '@/components/dashboard/WhatsAppPartyModal';
 
 // WhatsApp icon ka SVG component
 const WhatsAppIcon = () => (
@@ -13,6 +14,8 @@ const WhatsAppIcon = () => (
 
 // --- Main WhatsApp Integration Page Component ---
 export default function WhatsappIntegrationPage() {
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
     return (
         // --- PADDING & TEXT SIZE FIX ---
         <div className="bg-white min-h-screen w-full font-sans flex justify-center py-8 px-4">
@@ -77,7 +80,10 @@ export default function WhatsappIntegrationPage() {
 
                 {/* --- Call to Action Section --- */}
                 <div className="flex flex-col items-center gap-4">
-                    <button className="bg-red-500 text-white font-semibold px-10 py-3 rounded-full text-lg hover:bg-red-600 transition-colors shadow-lg hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-red-400">
+                    <button
+                        onClick={() => setIsModalOpen(true)}
+                        className="bg-red-500 text-white font-semibold px-10 py-3 rounded-full text-lg hover:bg-red-600 transition-colors shadow-lg hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-red-400"
+                    >
                         Link my WhatsApp
                     </button>
                     <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -87,6 +93,11 @@ export default function WhatsappIntegrationPage() {
                 </div>
 
             </div>
+
+            <WhatsAppPartyModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+            />
         </div>
     );
 }

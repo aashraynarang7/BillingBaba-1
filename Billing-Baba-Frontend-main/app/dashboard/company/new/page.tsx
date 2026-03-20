@@ -40,11 +40,6 @@ interface CompanyForm {
     address: string;
     logo: string;
     signature: string;
-    upiId: string;
-    bankName: string;
-    bankAccountNo: string;
-    bankIfsc: string;
-    bankAccountHolder: string;
 }
 
 export default function CompanyProfilePage() {
@@ -66,11 +61,6 @@ export default function CompanyProfilePage() {
             address: '',
             logo: '',
             signature: '',
-            upiId: '',
-            bankName: '',
-            bankAccountNo: '',
-            bankIfsc: '',
-            bankAccountHolder: '',
         }
     });
 
@@ -97,11 +87,6 @@ export default function CompanyProfilePage() {
                     setValue('address', company.address || '');
                     setValue('logo', company.logo || '');
                     setValue('signature', company.signature || '');
-                    setValue('upiId', company.upiId || '');
-                    setValue('bankName', company.bankName || '');
-                    setValue('bankAccountNo', company.bankAccountNo || '');
-                    setValue('bankIfsc', company.bankIfsc || '');
-                    setValue('bankAccountHolder', company.bankAccountHolder || '');
                 }
             } catch (e) {
                 console.error(e);
@@ -284,36 +269,8 @@ export default function CompanyProfilePage() {
                     </div>
                 </div>
 
-                {/* Bank & UPI Details */}
-                <div className="mt-6 pt-6 border-t">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-4">Bank & Payment Details</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-gray-600">UPI ID</label>
-                            <Input {...register('upiId')} placeholder="e.g. 9876543210@upi" />
-                            <p className="text-xs text-gray-400">Used to generate QR code on invoice</p>
-                        </div>
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-gray-600">Bank Name</label>
-                            <Input {...register('bankName')} placeholder="e.g. KOTAK MAHINDRA BANK" />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-gray-600">Account Number</label>
-                            <Input {...register('bankAccountNo')} placeholder="Enter Account Number" />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-gray-600">IFSC Code</label>
-                            <Input {...register('bankIfsc')} placeholder="e.g. KKBK0005922" />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-gray-600">Account Holder Name</label>
-                            <Input {...register('bankAccountHolder')} placeholder="Enter Account Holder Name" />
-                        </div>
-                    </div>
-                </div>
-
                 <div className="mt-8 flex justify-end gap-4 pt-4 border-t">
-                    <Button type="button" variant="outline">Cancel</Button>
+                    <Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>
                     <Button type="submit" disabled={isSaving} className="bg-red-600 hover:bg-red-700 text-white min-w-[140px]">
                         {isSaving ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : null}
                         Save Changes

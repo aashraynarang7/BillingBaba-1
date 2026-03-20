@@ -1,0 +1,6 @@
+2026/03/19-13:14:41.284 1ea00 Reusing MANIFEST C:\CMT AI projects\BillingBaba\backend\whatsapp_session\session\Default\Local Storage\leveldb/MANIFEST-000001
+2026/03/19-13:14:41.312 1ea00 Recovering log #3
+2026/03/19-13:14:41.316 1ea00 Reusing old log C:\CMT AI projects\BillingBaba\backend\whatsapp_session\session\Default\Local Storage\leveldb/000003.log 
+2026/03/19-13:16:42.919 1f828 Level-0 table #5: started
+2026/03/19-13:16:47.316 1f828 Level-0 table #5: 19421 bytes OK
+2026/03/19-13:16:48.142 1f828 Delete type=0 #3

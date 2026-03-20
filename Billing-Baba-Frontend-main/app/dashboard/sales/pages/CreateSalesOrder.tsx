@@ -179,9 +179,7 @@ export default function CreateSaleOrderPage({ onCancel, initialData }: { onCance
                 });
                 setAllItems(flattenedItems);
 
-                if (!orderNumber) {
-                    setOrderNumber(`SO-${Date.now().toString().slice(-6)}`);
-                }
+                // order number assigned sequentially by backend on save
             } catch (error) {
                 console.error("Failed to load data", error);
             }
@@ -311,15 +309,14 @@ export default function CreateSaleOrderPage({ onCancel, initialData }: { onCance
         documents.forEach((file) => formData.append('documents', file));
 
         try {
-            let responseData;
             if (initialData && initialData._id) {
-                responseData = await updateSale(initialData._id, formData);
+                await updateSale(initialData._id, formData);
+                onCancel();
             } else {
-                responseData = await createSaleOrder(formData);
+                const responseData = await createSaleOrder(formData);
+                setSavedData(responseData);
+                setIsPreviewOpen(true);
             }
-
-            setSavedData(responseData);
-            setIsPreviewOpen(true);
         } catch (error) {
             console.error("Error saving sale order", error);
             toast({ title: "Failed to save Sale Order", variant: "destructive" });

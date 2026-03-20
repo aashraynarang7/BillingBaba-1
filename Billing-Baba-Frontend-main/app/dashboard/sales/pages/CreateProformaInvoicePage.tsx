@@ -174,9 +174,7 @@ export default function CreateProformaInvoicePage({ onCancel, initialData }: { o
                 });
                 setAllItems(flattenedItems);
 
-                if (!refNo) {
-                    setRefNo(`PRO-${Date.now().toString().slice(-6)}`);
-                }
+                // refNo assigned sequentially by backend on save
                 if (!stateOfSupply && companiesData[0]?.state) {
                     setStateOfSupply(companiesData[0].state);
                 }
@@ -298,15 +296,14 @@ export default function CreateProformaInvoicePage({ onCancel, initialData }: { o
         documents.forEach((file) => formData.append('documents', file));
 
         try {
-            let responseData;
             if (initialData && initialData._id) {
-                responseData = await updateSale(initialData._id, formData);
+                await updateSale(initialData._id, formData);
+                onCancel();
             } else {
-                responseData = await createSaleOrder(formData);
+                const responseData = await createSaleOrder(formData);
+                setSavedData(responseData);
+                setIsPreviewOpen(true);
             }
-
-            setSavedData(responseData);
-            setIsPreviewOpen(true);
 
         } catch (error) {
             console.error("Error saving proforma", error);

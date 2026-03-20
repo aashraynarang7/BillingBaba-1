@@ -3,6 +3,7 @@ const Item = require('../models/Item');
 const Product = require('../models/Product');
 const Service = require('../models/Service');
 const Category = require('../models/Category');
+const Sale = require('../models/Sale');
 
 exports.createItem = async (req, res) => {
     try {
@@ -99,7 +100,7 @@ exports.createItem = async (req, res) => {
 exports.getItems = async (req, res) => {
     try {
         const { companyId, type, productId, id } = req.query;
-        const filter = {};
+        const filter = { isActive: { $ne: false } };
         if (companyId) filter.companyId = companyId;
         if (type) filter.type = type;
         if (productId) filter.product = productId;
@@ -402,3 +403,130 @@ exports.getItemTransactions = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+// ── Bulk data for inactive modal ──────────────────────────────────────────────
+// Returns active items with their stock qty and qty sold in last 90 days
+exports.getBulkItemData = async (req, res) => {
+    try {
+        const { companyId } = req.query;
+        const filter = { isActive: { $ne: false } };
+        if (companyId) filter.companyId = companyId;
+
+        const items = await Item.find(filter).populate('product').populate('service');
+
+        // Qty sold per itemId in last 90 days (from SaleInvoice)
+        const SaleInvoice = require('../models/SaleInvoice');
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 90);
+
+        const matchStage = { createdAt: { $gte: cutoff }, status: { $ne: 'Cancelled' } };
+        if (companyId) {
+            try { matchStage.companyId = new mongoose.Types.ObjectId(companyId); } catch (_) { matchStage.companyId = companyId; }
+        }
+
+        const salesAgg = await SaleInvoice.aggregate([
+            { $match: matchStage },
+            { $unwind: '$items' },
+            { $group: { _id: '$items.itemId', soldQty: { $sum: '$items.quantity' } } }
+        ]);
+        const soldMap = {};
+        salesAgg.forEach(r => { if (r._id) soldMap[r._id.toString()] = r.soldQty; });
+
+        const result = items.map(item => ({
+            _id: item._id,
+            name: item.name,
+            type: item.type,
+            isActive: item.isActive !== false,
+            quantity: item.product?.currentQuantity ?? 0,
+            qtySold: soldMap[item._id.toString()] || 0,
+            itemCode: item.product?.itemCode || item.service?.itemCode || null,
+        }));
+
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// ── Bulk mark inactive ────────────────────────────────────────────────────────
+exports.bulkInactive = async (req, res) => {
+    try {
+        const { itemIds } = req.body;
+        if (!itemIds || !itemIds.length) return res.status(400).json({ error: 'itemIds required' });
+        await Item.updateMany({ _id: { $in: itemIds } }, { $set: { isActive: false } });
+        res.json({ message: `${itemIds.length} item(s) marked inactive` });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// ── Bulk mark active ──────────────────────────────────────────────────────────
+exports.bulkActive = async (req, res) => {
+    try {
+        const { itemIds } = req.body;
+        if (!itemIds || !itemIds.length) return res.status(400).json({ error: 'itemIds required' });
+        await Item.updateMany({ _id: { $in: itemIds } }, { $set: { isActive: true } });
+        res.json({ message: `${itemIds.length} item(s) marked active` });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// ── Fetch inactive items ──────────────────────────────────────────────────────
+exports.getInactiveItemData = async (req, res) => {
+    try {
+        const { companyId } = req.query;
+        const filter = { isActive: false };
+        if (companyId) filter.companyId = companyId;
+
+        const items = await Item.find(filter).populate('product').populate('service');
+
+        const result = items.map(item => ({
+            _id: item._id,
+            name: item.name,
+            type: item.type,
+            quantity: item.product?.currentQuantity ?? 0,
+        }));
+
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// ── Bulk assign random unique item code ───────────────────────────────────────
+function generateCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = '';
+    for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    return code;
+}
+
+exports.bulkAssignCode = async (req, res) => {
+    try {
+        const { itemIds } = req.body;
+        if (!itemIds || !itemIds.length) return res.status(400).json({ error: 'itemIds required' });
+
+        // Collect all existing codes to avoid collision
+        const existingProducts = await Product.find({ itemCode: { $ne: null, $ne: '' } }, 'itemCode');
+        const usedCodes = new Set(existingProducts.map(p => p.itemCode));
+
+        const items = await Item.find({ _id: { $in: itemIds } }).populate('product');
+        const updates = [];
+
+        for (const item of items) {
+            if (item.type !== 'product' || !item.product) continue;
+            let code;
+            // Retry until unique
+            do { code = generateCode(); } while (usedCodes.has(code));
+            usedCodes.add(code);
+            updates.push(Product.findByIdAndUpdate(item.product._id, { itemCode: code }));
+        }
+
+        await Promise.all(updates);
+        res.json({ message: `Codes assigned to ${updates.length} item(s)` });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+

@@ -495,15 +495,13 @@ export default function CreateSaleInvoicePage({ onCancel, initialData }: { onCan
 
         try {
             if (initialData && initialData._id && initialData.invoiceNumber) {
-                const response = await updateSale(initialData._id, formData);
-                setSavedData(response);
-                setIsPreviewOpen(true);
+                await updateSale(initialData._id, formData);
+                onCancel();
             } else {
                 const response = await createSaleOrder(formData); // createSaleOrder alias for createSale
                 setSavedData(response);
                 setIsPreviewOpen(true);
             }
-            // onCancel(); // Dont close immediately
         } catch (error) {
             console.error("Error saving invoice", error);
             toast({ title: "Failed to save Invoice", variant: "destructive" });

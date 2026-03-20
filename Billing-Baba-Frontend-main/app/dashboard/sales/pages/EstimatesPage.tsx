@@ -11,6 +11,7 @@ import CreateSaleInvoicePage from './CreateSaleInvoicePage';
 import CreateSaleOrderPage from './CreateSalesOrder';
 import CreateEstimatePage from './CreateEstimatePage';
 import FilterBar from '../component/FilterBar';
+import { InvoicePreview } from '../component/InvoicePreview';
 import { toast } from '@/components/ui/use-toast';
 
 // Illustration
@@ -51,6 +52,7 @@ export default function EstimatesPage() {
     const [convertingToOrderDoc, setConvertingToOrderDoc] = useState<any>(null); // Convert to Sale Order
     const [estimates, setEstimates] = useState<Transaction[]>([]);
     const [fullDocs, setFullDocs] = useState<any[]>([]);
+    const [printInvoiceData, setPrintInvoiceData] = useState<any>(null);
 
     // Filters
     const [filters, setFilters] = useState<any>({});
@@ -112,6 +114,16 @@ export default function EstimatesPage() {
         if (doc) setConvertingToOrderDoc(doc);
     };
 
+    const handlePrint = (id: string) => {
+        const doc = fullDocs.find(d => d._id === id);
+        if (doc) setPrintInvoiceData(doc);
+    };
+
+    const handleDuplicate = (id: string) => {
+        const doc = fullDocs.find(d => d._id === id);
+        if (doc) setEditingDoc({ ...doc, _id: undefined, refNo: '', invoiceDate: new Date() });
+    };
+
     if (isCreating || editingDoc) {
         return <CreateEstimatePage
             onCancel={() => { setIsCreating(false); setEditingDoc(null); }}
@@ -146,6 +158,7 @@ export default function EstimatesPage() {
     }
 
     return (
+        <>
         <div className="w-full bg-slate-50 p-4 sm:p-6 lg:p-8 min-h-screen">
             <div className="border-b border-gray-200">
                 <nav className="-mb-px flex space-x-6">
@@ -174,6 +187,8 @@ export default function EstimatesPage() {
                                 onEdit={handleEdit}
                                 onDelete={handleDelete}
                                 onView={handleEdit}
+                                onPrint={handlePrint}
+                                onDuplicate={handleDuplicate}
                             />
                         ) : (
                             <div className="text-center py-10 text-gray-500">No estimates found matching filters.</div>
@@ -193,5 +208,15 @@ export default function EstimatesPage() {
                 )}
             </div>
         </div>
+
+        {printInvoiceData && (
+            <InvoicePreview
+                isOpen={!!printInvoiceData}
+                onClose={() => setPrintInvoiceData(null)}
+                data={printInvoiceData}
+                type="ESTIMATE"
+            />
+        )}
+        </>
     );
 }

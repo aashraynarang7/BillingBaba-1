@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Edit, MessageSquare, Clock, Search, Printer, FileSpreadsheet, MoreVertical } from 'lucide-react';
+import WhatsAppPartyModal from '@/components/dashboard/WhatsAppPartyModal';
 
 const dropdownMenuItems = [
     'View/Edit', 'Cancel Invoice', 'Delete', 'Duplicate', 'Open PDF',
@@ -29,10 +30,13 @@ interface TransactionDetailsProps {
 
 export const TransactionDetails = ({ selectedParty, transactionsData, onEditParty, onShowOptions }: TransactionDetailsProps) => {
     const [openMenuIndex, setOpenMenuIndex] = useState<number | null>(null);
+    const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
 
     const toggleMenu = (index: number) => {
         setOpenMenuIndex(openMenuIndex === index ? null : index);
     };
+
+    const totalBalance = transactionsData.reduce((sum, t) => sum + (t.balance || 0), 0);
 
     if (!selectedParty) {
         return (
@@ -51,7 +55,15 @@ export const TransactionDetails = ({ selectedParty, transactionsData, onEditPart
                 </div>
                 <div className="flex items-center gap-3">
                     <button className="p-2 relative"><MessageSquare className="h-5 w-5 text-gray-500" /><span className="absolute top-1 right-1 h-2 w-2 bg-orange-400 rounded-full"></span></button>
-                    <img src="https://cdn-icons-png.flaticon.com/512/124/124034.png" alt="WhatsApp" className="h-5 w-5 cursor-pointer" />
+                    <button
+                        onClick={() => setIsWhatsAppOpen(true)}
+                        className="p-1.5 rounded-full hover:bg-green-50 transition-colors"
+                        title="Send WhatsApp payment reminder"
+                    >
+                        <svg viewBox="0 0 32 32" className="h-5 w-5 fill-green-500" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M16 3C8.82 3 3 8.82 3 16c0 2.29.6 4.52 1.74 6.49L3 29l6.69-1.72A13 13 0 0 0 16 29c7.18 0 13-5.82 13-13S23.18 3 16 3zm0 23.85a10.85 10.85 0 0 1-5.54-1.52l-.4-.24-4.1 1.06 1.08-3.94-.26-.41A10.85 10.85 0 1 1 16 26.85zm5.95-8.13c-.33-.16-1.93-.95-2.23-1.06-.3-.1-.51-.16-.73.16-.22.33-.84 1.06-1.03 1.28-.19.22-.38.24-.71.08-.33-.16-1.4-.52-2.66-1.65-.98-.88-1.65-1.97-1.84-2.3-.19-.33-.02-.5.14-.67.15-.15.33-.38.5-.57.16-.19.22-.33.33-.55.11-.22.05-.41-.03-.57-.08-.16-.72-1.74-.99-2.38-.26-.62-.52-.54-.72-.55l-.62-.01c-.21 0-.56.08-.85.38s-1.12 1.1-1.12 2.67 1.15 3.1 1.31 3.31c.16.22 2.27 3.46 5.5 4.85.77.33 1.37.53 1.83.68.77.24 1.47.21 2.02.13.62-.09 1.93-.79 2.2-1.55.27-.76.27-1.4.19-1.55-.08-.14-.3-.22-.62-.38z" />
+                        </svg>
+                    </button>
                     <button className="p-2 relative"><Clock className="h-5 w-5 text-gray-500" /><span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full border border-white"></span></button>
                 </div>
             </div>
@@ -96,6 +108,17 @@ export const TransactionDetails = ({ selectedParty, transactionsData, onEditPart
                     )}
                 </div>
             </div>
+            <WhatsAppPartyModal
+                isOpen={isWhatsAppOpen}
+                onClose={() => setIsWhatsAppOpen(false)}
+                partyName={selectedParty?.name}
+                partyPhone={selectedParty?.phone}
+                paymentMessage={
+                    totalBalance > 0
+                        ? `Dear Customer,\nThis is a gentle reminder regarding your payment of ₹${totalBalance.toLocaleString('en-IN')} pending with us.\nIf you have already made the payment, kindly ignore this message.\n-\nThank You,\n${typeof window !== 'undefined' ? (localStorage.getItem('activeCompanyName') || 'BillingBaba') : 'BillingBaba'}`
+                        : undefined
+                }
+            />
         </main>
     );
 };

@@ -10,6 +10,7 @@ import { fetchPurchases, cancelPurchase, fetchPurchaseById } from '@/lib/api';
 import { Transaction } from '@/lib/types';
 import { format } from 'date-fns';
 import { Card, CardContent } from '@/components/ui/card';
+import { InvoicePreview } from '@/app/dashboard/sales/component/InvoicePreview';
 import { toast } from '@/components/ui/use-toast';
 
 // --- Illustration Component ---
@@ -42,7 +43,8 @@ export default function PurchaseOrderPage() {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filters, setFilters] = useState<any>({});
-    const [editingData, setEditingData] = useState<any>(null); // State for editing
+    const [editingData, setEditingData] = useState<any>(null);
+    const [printInvoiceData, setPrintInvoiceData] = useState<any>(null);
 
 
     const loadPurchases = async () => {
@@ -104,6 +106,21 @@ export default function PurchaseOrderPage() {
         }
     };
 
+    const handlePrint = (id: string) => {
+        const t = transactions.find(t => String(t.id) === id);
+        if (t) setPrintInvoiceData(t);
+    };
+
+    const handleDuplicate = async (id: string) => {
+        try {
+            const data = await fetchPurchaseById(id);
+            setEditingData({ ...data, _id: undefined, orderNumber: '', orderDate: new Date() });
+            setIsCreating(true);
+        } catch (error) {
+            toast({ title: "Failed to load order for duplication.", variant: "destructive" });
+        }
+    };
+
     if (isCreating) {
         return (
             <div className="w-full bg-slate-50 p-4 sm:p-6 lg:p-8 min-h-screen">
@@ -142,6 +159,9 @@ export default function PurchaseOrderPage() {
                     showToolbar={true}
                     onDelete={handleDelete}
                     onEdit={handleEdit}
+                    onView={handleEdit}
+                    onPrint={handlePrint}
+                    onDuplicate={handleDuplicate}
                 />
             ) : (
                 <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -158,6 +178,15 @@ export default function PurchaseOrderPage() {
                         </Button>
                     </div>
                 </div>
+            )}
+
+            {printInvoiceData && (
+                <InvoicePreview
+                    isOpen={!!printInvoiceData}
+                    onClose={() => setPrintInvoiceData(null)}
+                    data={printInvoiceData}
+                    type="PURCHASE_ORDER"
+                />
             )}
         </div>
     );

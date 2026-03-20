@@ -8,6 +8,7 @@ import { EditPartyModal } from '@/components/dashboard/party/EditPartyModal';
 import { ShowOptionsModal } from '@/components/dashboard/party/ShowOptionsModal';
 import { fetchParties, fetchSales, fetchPurchases } from '@/lib/api';
 import { format } from 'date-fns';
+import BulkWhatsAppModal from '@/components/dashboard/BulkWhatsAppModal';
 
 export default function PartiesPage() {
     const [parties, setParties] = useState<Party[]>([]);
@@ -16,6 +17,7 @@ export default function PartiesPage() {
     const [isEditModalOpen, setEditModalOpen] = useState(false);
     const [isAddModalOpen, setAddModalOpen] = useState(false);
     const [isOptionsModalOpen, setOptionsModalOpen] = useState(false);
+    const [isBulkWAOpen, setIsBulkWAOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
     // Fetch parties on load
@@ -88,6 +90,16 @@ export default function PartiesPage() {
             <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 flex items-center justify-between shrink-0 h-16">
                 <div className="flex items-center gap-2"><h1 className="text-xl font-bold text-gray-800">Parties</h1><ChevronDown className="h-5 w-5 text-gray-600 cursor-pointer" /></div>
                 <div className="flex items-center gap-2 sm:gap-4">
+                    <button
+                        onClick={() => setIsBulkWAOpen(true)}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-green-400 text-green-700 text-sm font-medium hover:bg-green-50 transition-colors"
+                        title="Send bulk WhatsApp reminders"
+                    >
+                        <svg viewBox="0 0 32 32" className="h-4 w-4 fill-green-500" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M16 3C8.82 3 3 8.82 3 16c0 2.29.6 4.52 1.74 6.49L3 29l6.69-1.72A13 13 0 0 0 16 29c7.18 0 13-5.82 13-13S23.18 3 16 3z" />
+                        </svg>
+                        <span className="hidden sm:inline">Send Reminders</span>
+                    </button>
                     <button className="bg-red-500 text-white font-semibold px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-red-600 transition-colors" onClick={() => setAddModalOpen(true)}><Plus className="h-5 w-5" /><span className="hidden sm:inline">Add Party</span></button>
                     <button className="p-2 hover:bg-gray-100 rounded-full"><Settings className="h-5 w-5 text-gray-600" /></button>
                     <button className="p-2 hover:bg-gray-100 rounded-full"><MoreVertical className="h-5 w-5 text-gray-600" /></button>
@@ -122,6 +134,7 @@ export default function PartiesPage() {
                 onSuccess={loadParties}
             />
             <ShowOptionsModal isOpen={isOptionsModalOpen} onClose={() => setOptionsModalOpen(false)} />
+            <BulkWhatsAppModal isOpen={isBulkWAOpen} onClose={() => setIsBulkWAOpen(false)} />
         </div>
     );
 }

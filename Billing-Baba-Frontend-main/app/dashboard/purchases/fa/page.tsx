@@ -10,6 +10,7 @@ import { fetchPurchases } from '@/lib/api';
 import { Transaction } from '@/lib/types';
 import { format } from 'date-fns';
 import { Card, CardContent } from '@/components/ui/card';
+import { InvoicePreview } from '@/app/dashboard/sales/component/InvoicePreview';
 import { toast } from '@/components/ui/use-toast';
 
 const PurchaseFAIllustration = () => (
@@ -30,6 +31,7 @@ export default function PurchaseFAPage() {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filters, setFilters] = useState<any>({});
+    const [printInvoiceData, setPrintInvoiceData] = useState<any>(null);
 
     const loadPurchases = async () => {
         setIsLoading(true);
@@ -79,7 +81,16 @@ export default function PurchaseFAPage() {
     };
 
     const handleEdit = (id: string) => {
-        toast({ title: "Edit functionality to be implemented" });
+        setIsCreating(true);
+    };
+
+    const handlePrint = (id: string) => {
+        const t = transactions.find(t => String(t.id) === id);
+        if (t) setPrintInvoiceData(t);
+    };
+
+    const handleDuplicate = (id: string) => {
+        setIsCreating(true);
     };
 
     if (isCreating) {
@@ -117,6 +128,9 @@ export default function PurchaseFAPage() {
                     showToolbar={true}
                     onDelete={handleDelete}
                     onEdit={handleEdit}
+                    onView={handleEdit}
+                    onPrint={handlePrint}
+                    onDuplicate={handleDuplicate}
                 />
             ) : (
                 <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -133,6 +147,15 @@ export default function PurchaseFAPage() {
                         </Button>
                     </div>
                 </div>
+            )}
+
+            {printInvoiceData && (
+                <InvoicePreview
+                    isOpen={!!printInvoiceData}
+                    onClose={() => setPrintInvoiceData(null)}
+                    data={printInvoiceData}
+                    type="PURCHASE_FA"
+                />
             )}
         </div>
     );

@@ -166,6 +166,11 @@ export default function SaleOrderPage() {
         }
     };
 
+    const handleDuplicate = (id: string) => {
+        const order = orders.find(o => o.id === id);
+        if (order) setEditingOrder({ ...order, _id: undefined, id: undefined, orderNumber: '', orderDate: new Date() } as any);
+    };
+
     if (isCreatingOrder || editingOrder) {
         return (
             <div className="w-full bg-slate-50 p-4 sm:p-6 lg:p-8 min-h-screen">
@@ -232,6 +237,7 @@ export default function SaleOrderPage() {
                                         onDelete={handleDelete}
                                         onView={handleView}
                                         onPrint={handlePrintRow}
+                                        onDuplicate={handleDuplicate}
                                     />
                                 </div>
                             ) : (

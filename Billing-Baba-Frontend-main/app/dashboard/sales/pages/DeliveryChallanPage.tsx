@@ -9,6 +9,7 @@ import { fetchSales, cancelSale } from '@/lib/api';
 import { format } from 'date-fns';
 import { Transaction } from '@/lib/types';
 import FilterBar from '../component/FilterBar';
+import { InvoicePreview } from '../component/InvoicePreview';
 import { toast } from '@/components/ui/use-toast';
 
 const DeliveryChallanIllustration = () => (
@@ -41,6 +42,7 @@ export default function DeliveryChallanPage() {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filters, setFilters] = useState<any>({});
+    const [printInvoiceData, setPrintInvoiceData] = useState<any>(null);
 
     const loadChallans = async () => {
         try {
@@ -96,6 +98,20 @@ export default function DeliveryChallanPage() {
         }
     };
 
+    const handleEdit = (id: string) => {
+        setIsCreatingChallan(true);
+    };
+
+    const handlePrint = (id: string) => {
+        const t = transactions.find(t => String(t.id) === id);
+        if (t) setPrintInvoiceData(t);
+    };
+
+    const handleDuplicate = (id: string) => {
+        // Opens a new blank challan form (CreateDeliveryChallanPage doesn't support initialData yet)
+        setIsCreatingChallan(true);
+    };
+
     if (isCreatingChallan) {
         return (
             <div className="w-full bg-slate-50 p-4 sm:p-6 lg:p-8 min-h-screen">
@@ -124,10 +140,12 @@ export default function DeliveryChallanPage() {
                     <TransactionsTable
                         transactions={transactions}
                         showToolbar={true}
-                        onEdit={(id) => console.log("Edit", id)}
+                        onEdit={handleEdit}
                         onDelete={handleDelete}
-                        onView={(id) => console.log("View", id)}
+                        onView={handleEdit}
                         onConvert={handleConvert}
+                        onPrint={handlePrint}
+                        onDuplicate={handleDuplicate}
                     />
                 </>
             ) : (
@@ -146,6 +164,15 @@ export default function DeliveryChallanPage() {
                         </Button>
                     </div>
                 </div>
+            )}
+
+            {printInvoiceData && (
+                <InvoicePreview
+                    isOpen={!!printInvoiceData}
+                    onClose={() => setPrintInvoiceData(null)}
+                    data={printInvoiceData}
+                    type="INVOICE"
+                />
             )}
         </div>
     );

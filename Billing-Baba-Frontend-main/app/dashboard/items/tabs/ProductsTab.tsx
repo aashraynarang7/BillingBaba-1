@@ -9,12 +9,16 @@ import {
   Plus,
   FileText,
   Edit,
-  Trash2
+  Trash2,
+  Hash
 } from 'lucide-react';
 import AdjustItem from '../component/AdjustItem';
 import AddItemModal from '../component/AddItemModal';
 import BulkUpdateItemsPage from '../component/BulkUpdateItemsPage';
-import { fetchItems, deleteItem, fetchTransactionsByItem } from '@/lib/api';
+import BulkInactiveModal from '../component/BulkInactiveModal';
+import BulkActiveModal from '../component/BulkActiveModal';
+import BulkAssignCodeModal from '../component/BulkAssignCodeModal';
+import { fetchItems, deleteItem, fetchTransactionsByItem, bulkAssignCode } from '@/lib/api';
 import { format } from 'date-fns';
 import { toast } from '@/components/ui/use-toast';
 
@@ -33,6 +37,9 @@ const ProductsTab = () => {
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
+  const [isBulkInactiveOpen, setIsBulkInactiveOpen] = useState(false);
+  const [isBulkActiveOpen, setIsBulkActiveOpen] = useState(false);
+  const [isBulkAssignCodeOpen, setIsBulkAssignCodeOpen] = useState(false);
 
   const loadItems = async () => {
     try {
@@ -115,6 +122,16 @@ const ProductsTab = () => {
     }
   };
 
+  const handleAssignCode = async (itemId: string) => {
+    try {
+      await bulkAssignCode([itemId]);
+      toast({ title: 'Item code assigned successfully', className: 'bg-green-500 text-white' });
+      await loadItems();
+    } catch {
+      toast({ title: 'Failed to assign item code', variant: 'destructive' });
+    }
+  };
+
   const getStockQty = (item: any) => {
     if (item.type === 'product' && item.product) {
       return item.product.currentQuantity || 0;
@@ -187,9 +204,31 @@ const ProductsTab = () => {
               {isBulkActionsDropdownOpen && (
                 <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-20">
                   <ul className="p-1 text-sm text-gray-700">
-                    {['Bulk Inactive', 'Bulk Active', 'Bulk Assign Code', 'Assign Units'].map(label => (
-                      <li key={label}><button className="w-full text-left px-3 py-2 hover:bg-gray-100 rounded-md">{label}</button></li>
-                    ))}
+                    <li>
+                      <button
+                        className="w-full text-left px-3 py-2 hover:bg-gray-100 rounded-md"
+                        onClick={() => { setIsBulkActionsDropdownOpen(false); setIsBulkInactiveOpen(true); }}
+                      >
+                        Bulk Inactive
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        className="w-full text-left px-3 py-2 hover:bg-gray-100 rounded-md"
+                        onClick={() => { setIsBulkActionsDropdownOpen(false); setIsBulkActiveOpen(true); }}
+                      >
+                        Bulk Active
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        className="w-full text-left px-3 py-2 hover:bg-gray-100 rounded-md"
+                        onClick={() => { setIsBulkActionsDropdownOpen(false); setIsBulkAssignCodeOpen(true); }}
+                      >
+                        Bulk Assign Code
+                      </button>
+                    </li>
+                    <li><button className="w-full text-left px-3 py-2 hover:bg-gray-100 rounded-md">Assign Units</button></li>
                     <li>
                       <button
                         className="w-full text-left px-3 py-2 hover:bg-gray-100 rounded-md"
@@ -244,6 +283,19 @@ const ProductsTab = () => {
                                   <Edit size={14} /> View/Edit
                                 </button>
                               </li>
+                              {item.type === 'product' && !item.product?.itemCode && (
+                                <li>
+                                  <button
+                                    className="w-full flex items-center gap-2 text-left px-3 py-2 hover:bg-gray-100 rounded-md"
+                                    onClick={() => {
+                                      setOpenRowMenuId(null);
+                                      handleAssignCode(item._id);
+                                    }}
+                                  >
+                                    <Hash size={14} /> Assign Code
+                                  </button>
+                                </li>
+                              )}
                               <li>
                                 <button
                                   className="w-full flex items-center gap-2 text-left px-3 py-2 hover:bg-gray-100 rounded-md text-red-600"
@@ -301,6 +353,17 @@ const ProductsTab = () => {
                             >
                               <Edit size={16} /> View/Edit
                             </button></li>
+                            {selectedItem.type === 'product' && !selectedItem.product?.itemCode && (
+                              <li><button
+                                className="w-full flex items-center gap-3 text-left px-3 py-2 hover:bg-gray-100 rounded-md"
+                                onClick={() => {
+                                  setIsItemActionsDropdownOpen(false);
+                                  handleAssignCode(selectedItem._id);
+                                }}
+                              >
+                                <Hash size={16} /> Assign Code
+                              </button></li>
+                            )}
                             <li><button
                               className="w-full flex items-center gap-3 text-left px-3 py-2 hover:bg-gray-100 rounded-md text-red-600"
                               onClick={() => handleDeleteItem(selectedItem._id)}
@@ -381,6 +444,10 @@ const ProductsTab = () => {
       <AdjustItem
         isOpen={isAdjustModalOpen}
         onClose={() => setIsAdjustModalOpen(false)}
+        itemId={selectedItem?._id || ''}
+        itemName={selectedItem?.name || ''}
+        itemUnit={selectedItem?.product?.unit || selectedItem?.unit || 'Pcs'}
+        onSuccess={loadItems}
       />
 
       <AddItemModal
@@ -389,6 +456,24 @@ const ProductsTab = () => {
         onSuccess={loadItems}
         mode={modalMode}
         initialData={modalMode === 'edit' ? selectedItem : undefined}
+      />
+
+      <BulkInactiveModal
+        isOpen={isBulkInactiveOpen}
+        onClose={() => setIsBulkInactiveOpen(false)}
+        onSuccess={loadItems}
+      />
+
+      <BulkActiveModal
+        isOpen={isBulkActiveOpen}
+        onClose={() => setIsBulkActiveOpen(false)}
+        onSuccess={loadItems}
+      />
+
+      <BulkAssignCodeModal
+        isOpen={isBulkAssignCodeOpen}
+        onClose={() => setIsBulkAssignCodeOpen(false)}
+        onSuccess={loadItems}
       />
     </>
   );

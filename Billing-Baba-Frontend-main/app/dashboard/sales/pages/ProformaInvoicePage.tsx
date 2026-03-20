@@ -122,6 +122,11 @@ export default function ProformaInvoicePage() {
         }
     };
 
+    const handleDuplicate = (id: string) => {
+        const doc = fullDocs.find(d => d._id === id);
+        if (doc) setEditingDoc({ ...doc, _id: undefined, refNo: '', invoiceDate: new Date() });
+    };
+
     if (isCreating || editingDoc) {
         return <CreateProformaInvoicePage
             onCancel={() => { setIsCreating(false); setEditingDoc(null); }}
@@ -185,6 +190,7 @@ export default function ProformaInvoicePage() {
                                 onDelete={handleDelete}
                                 onView={handleEdit}
                                 onPrint={handlePrintRow}
+                                onDuplicate={handleDuplicate}
                             />
                         ) : (
                             <div className="text-center py-10 text-gray-500">No documents found matching filters.</div>
