@@ -3,6 +3,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const compression = require('compression');
 const path = require('path');
 
 const app = express();
@@ -13,8 +14,9 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
     : ['http://localhost:3000'];
 app.use(cors({ origin: allowedOrigins, credentials: true }));
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(compression());
+app.use(bodyParser.json({ limit: '10mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve Static Files
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
@@ -52,6 +54,9 @@ app.use('/api/expense-categories', require('./src/routes/expenseCategoryRoutes')
 app.use('/api/expense-items', require('./src/routes/expenseItemRoutes'));
 app.use('/api/bank-accounts', require('./src/routes/bankAccountRoutes'));
 app.use('/api/whatsapp', require('./src/routes/whatsappRoutes'));
+app.use('/api/online-store', require('./src/routes/onlineStoreRoutes'));
+app.use('/api/settings', require('./src/routes/settingsRoutes'));
+app.use('/api/party-groups', require('./src/routes/partyGroupRoutes'));
 
 // Start Server
 app.listen(PORT, () => {

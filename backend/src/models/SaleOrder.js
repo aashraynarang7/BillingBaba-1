@@ -64,4 +64,7 @@ const saleOrderSchema = new mongoose.Schema({
     updatedAt: { type: Date, default: Date.now }
 });
 
+saleOrderSchema.index({ companyId: 1, createdAt: -1 });
+saleOrderSchema.index({ companyId: 1, status: 1 });
+
 module.exports = mongoose.model('SaleOrder', saleOrderSchema);

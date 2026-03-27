@@ -4,13 +4,15 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { format } from 'date-fns';
-import { fetchCreditNotes, cancelSale } from '@/lib/api';
-import CreateCreditNotePage from './CreateCreditNotePage';
+import { fetchCreditNotes, deleteSale } from '@/lib/api';
 import TransactionsTable from '../component/TransactionsTable';
 import { Transaction } from '@/lib/types';
 import FilterBar from '../component/FilterBar';
-import { InvoicePreview } from '../component/InvoicePreview';
 import { toast } from '@/components/ui/use-toast';
+import dynamic from 'next/dynamic';
+
+const CreateCreditNotePage = dynamic(() => import('./CreateCreditNotePage'), { ssr: false });
+const InvoicePreview = dynamic(() => import('../component/InvoicePreview').then(m => ({ default: m.InvoicePreview })), { ssr: false });
 
 export default function CreditNotePage() {
     const [isCreating, setIsCreating] = useState(false);
@@ -19,6 +21,7 @@ export default function CreditNotePage() {
     const [fullDocs, setFullDocs] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filters, setFilters] = useState<any>({});
+    const [availableStatuses, setAvailableStatuses] = useState<string[]>([]);
     const [printInvoiceData, setPrintInvoiceData] = useState<any>(null);
 
     const loadData = async () => {
@@ -39,6 +42,9 @@ export default function CreditNotePage() {
                 isPaid: true
             }));
             setTransactions(mapped);
+            if (!filters.status) {
+                setAvailableStatuses([...new Set(mapped.map((t: any) => t.status).filter(Boolean))] as string[]);
+            }
         } catch (error) {
             console.error(error);
         } finally {
@@ -50,14 +56,27 @@ export default function CreditNotePage() {
         if (!isCreating && !editingDoc) loadData();
     }, [isCreating, editingDoc, filters]);
 
+    useEffect(() => {
+        const preload = () => {
+            import('./CreateCreditNotePage');
+            import('../component/InvoicePreview');
+        };
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+            const id = (window as any).requestIdleCallback(preload, { timeout: 2000 });
+            return () => (window as any).cancelIdleCallback(id);
+        } else {
+            const t = setTimeout(preload, 1000);
+            return () => clearTimeout(t);
+        }
+    }, []);
+
     const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure?")) return;
+        if (!confirm("Permanently delete this Credit Note? This cannot be undone.")) return;
         try {
-            await cancelSale(id);
+            await deleteSale(id);
             loadData();
         } catch (e) {
-            console.error(e);
-            toast({ title: "Failed to cancel", variant: "destructive" });
+            toast({ title: "Failed to delete", variant: "destructive" });
         }
     };
 
@@ -93,7 +112,7 @@ export default function CreditNotePage() {
             <div className="flex justify-between items-center p-4 bg-white rounded-lg shadow-sm">
                 <div className="flex items-center gap-4">
                     <h1 className="text-xl font-bold hidden sm:block">Credit Notes</h1>
-                    <FilterBar onFilterChange={setFilters} />
+                    <FilterBar onFilterChange={setFilters} statusOptions={availableStatuses} />
                 </div>
 
                 <Button onClick={() => setIsCreating(true)} className="bg-blue-600 hover:bg-blue-700 text-white gap-2">

@@ -3,12 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import CreatePurchaseInvoicePage from '../component/CreatePurchaseInvoicePage';
-import CreateDebitNotePage from '../component/CreateDebitNotePage';
-import CreatePaymentOutModal from '../component/CreatePaymentOutModal';
+import dynamic from 'next/dynamic';
+const CreatePurchaseInvoicePage = dynamic(() => import('../component/CreatePurchaseInvoicePage'), { ssr: false });
+const CreateDebitNotePage = dynamic(() => import('../component/CreateDebitNotePage'), { ssr: false });
+const CreatePaymentOutModal = dynamic(() => import('../component/CreatePaymentOutModal'), { ssr: false });
+const InvoicePreview = dynamic(() => import('@/app/dashboard/sales/component/InvoicePreview').then(m => ({ default: m.InvoicePreview })), { ssr: false });
 import FilterBar from '@/app/dashboard/sales/component/FilterBar';
 import TransactionsTable from '@/app/dashboard/sales/component/TransactionsTable';
-import { fetchPurchases, cancelPurchase } from '@/lib/api'; // Ensure cancelPurchase is exported or import dynamically
+import { fetchPurchases } from '@/lib/api';
 import { Transaction } from '@/lib/types';
 import { format } from 'date-fns';
 import { Card, CardContent } from '@/components/ui/card';
@@ -70,6 +72,7 @@ export default function PurchaseBills() {
     const [rawPurchases, setRawPurchases] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filters, setFilters] = useState<any>({});
+    const [availableStatuses, setAvailableStatuses] = useState<string[]>([]);
     const [initialDataForEdit, setInitialDataForEdit] = useState<any>(null);
     const [isConvertingToReturn, setIsConvertingToReturn] = useState(false);
     const [initialDataForReturn, setInitialDataForReturn] = useState<any>(null);
@@ -77,6 +80,7 @@ export default function PurchaseBills() {
     // Payment Modal
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [paymentModalData, setPaymentModalData] = useState<{ partyId?: string; amount?: number; invoiceId?: string; }>({});
+    const [printInvoiceData, setPrintInvoiceData] = useState<any>(null);
 
     const loadPurchases = async () => {
         setIsLoading(true);
@@ -103,6 +107,9 @@ export default function PurchaseBills() {
             }));
 
             setTransactions(mapped);
+            if (!filters.status) {
+                setAvailableStatuses([...new Set(mapped.map((t: any) => t.status).filter(Boolean))] as string[]);
+            }
         } catch (error) {
             console.error("Failed to load purchases", error);
         } finally {
@@ -116,15 +123,40 @@ export default function PurchaseBills() {
         }
     }, [isCreating, filters]);
 
+    useEffect(() => {
+        const preload = () => {
+            import('../component/CreatePurchaseInvoicePage');
+            import('../component/CreateDebitNotePage');
+            import('../component/CreatePaymentOutModal');
+            import('@/app/dashboard/sales/component/InvoicePreview');
+        };
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+            const id = (window as any).requestIdleCallback(preload, { timeout: 2000 });
+            return () => (window as any).cancelIdleCallback(id);
+        } else {
+            const t = setTimeout(preload, 1000);
+            return () => clearTimeout(t);
+        }
+    }, []);
+
     const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure?")) return;
+        if (!confirm("Permanently delete this bill? This cannot be undone.")) return;
         try {
-            // Dynamic import if needed, or just assume it's there
+            const { deletePurchase } = await import('@/lib/api');
+            await deletePurchase(id);
+            loadPurchases();
+        } catch (error) {
+            toast({ title: "Failed to delete", variant: "destructive" });
+        }
+    };
+
+    const handleCancel = async (id: string) => {
+        if (!confirm("Cancel this bill? It will be marked as Cancelled.")) return;
+        try {
             const { cancelPurchase } = await import('@/lib/api');
             await cancelPurchase(id);
             loadPurchases();
         } catch (error) {
-            console.error(error);
             toast({ title: "Failed to cancel", variant: "destructive" });
         }
     };
@@ -148,6 +180,11 @@ export default function PurchaseBills() {
     const handleMakePayment = (partyId: string, amount: number, invoiceId?: string) => {
         setPaymentModalData({ partyId, amount, invoiceId });
         setIsPaymentModalOpen(true);
+    };
+
+    const handlePrint = (id: string) => {
+        const rawPurchase = rawPurchases.find(p => String(p._id) === id);
+        if (rawPurchase) setPrintInvoiceData(rawPurchase);
     };
 
     const handleConvert = (id: string) => {
@@ -194,7 +231,7 @@ export default function PurchaseBills() {
             <Card className="shadow-sm">
                 <CardContent className="p-0 divide-y">
                     <div className="p-4 border-b flex justify-between items-center">
-                        <FilterBar onFilterChange={setFilters} />
+                        <FilterBar onFilterChange={setFilters} statusOptions={availableStatuses} />
                         <Button
                             className="bg-[var(--accent-orange)] hover:bg-[var(--primary-red)] text-white"
                             onClick={() => setIsCreating(true)}
@@ -210,11 +247,13 @@ export default function PurchaseBills() {
                     transactions={transactions}
                     showToolbar={true}
                     onDelete={handleDelete}
+                    onCancel={handleCancel}
                     onEdit={handleEdit}
                     onView={handleEdit}
                     onConvert={handleConvert}
                     onMakePayment={handleMakePayment}
                     onDuplicate={handleDuplicate}
+                    onPrint={handlePrint}
                 />
             ) : (
                 <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -246,6 +285,15 @@ export default function PurchaseBills() {
                 initialAmount={paymentModalData.amount}
                 initialBillId={paymentModalData.invoiceId}
             />
+
+            {printInvoiceData && (
+                <InvoicePreview
+                    isOpen={!!printInvoiceData}
+                    onClose={() => setPrintInvoiceData(null)}
+                    data={printInvoiceData}
+                    type="PURCHASE_BILL"
+                />
+            )}
         </div>
     );
 }

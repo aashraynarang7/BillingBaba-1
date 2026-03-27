@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     Calendar as CalendarIcon,
     ChevronDown,
@@ -32,10 +32,12 @@ import { Calendar } from '@/components/ui/calendar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { fetchParties, fetchCompanies, fetchItems, createPurchase, updatePurchase } from '@/lib/api';
-import { InvoicePreview } from '../../sales/component/InvoicePreview';
-import AddItemModal from '../../items/component/AddItemModal';
-import { EditPartyModal } from '@/components/dashboard/party/EditPartyModal';
+import { createPurchase, updatePurchase } from '@/lib/api';
+import { useParties, useCompanies, useItems } from '@/lib/hooks/useAppData';
+import dynamic from 'next/dynamic';
+const InvoicePreview = dynamic(() => import('../../sales/component/InvoicePreview').then(m => ({ default: m.InvoicePreview })), { ssr: false });
+const AddItemModal = dynamic(() => import('../../items/component/AddItemModal'), { ssr: false });
+const EditPartyModal = dynamic(() => import('@/components/dashboard/party/EditPartyModal').then(m => ({ default: m.EditPartyModal })), { ssr: false });
 import { toast } from '@/components/ui/use-toast';
 
 const indianStates = ["Andhra Pradesh", "Gujarat", "Karnataka", "Maharashtra", "Tamil Nadu"];
@@ -56,10 +58,10 @@ export default function CreatePurchaseInvoicePage({ onCancel, initialData }: { o
     const isCancelled = initialData?.status === 'Cancelled';
     const [billDate, setBillDate] = useState<Date | undefined>(initialData?.billDate ? new Date(initialData.billDate) : new Date());
 
-    // API Data
-    const [parties, setParties] = useState<any[]>([]);
-    const [companies, setCompanies] = useState<any[]>([]);
-    const [allItems, setAllItems] = useState<any[]>([]);
+    // Data from shared React Query cache (5-min stale time, no duplicate fetches)
+    const { data: parties = [] } = useParties();
+    const { data: companies = [] } = useCompanies();
+    const { data: allItems = [] } = useItems();
 
     // Form State
     const [selectedPartyId, setSelectedPartyId] = useState<string>(initialData?.partyId?._id || initialData?.partyId || '');
@@ -79,7 +81,11 @@ export default function CreatePurchaseInvoicePage({ onCancel, initialData }: { o
     );
     const [roundOff, setRoundOff] = useState(initialData?.roundOff || 0);
     const [isRoundOffEnabled, setIsRoundOffEnabled] = useState(!!initialData?.roundOff);
-    const [paidAmount, setPaidAmount] = useState<number | string>(initialData ? ((Number(initialData.grandTotal) || 0) - Number(initialData.balanceDue || 0)) : '');
+    // Read paidAmount directly from the stored field — not computed from grandTotal - balanceDue,
+    // since balanceDue can be reduced by external Payment-Out records later.
+    const [paidAmount, setPaidAmount] = useState<number | string>(
+        initialData ? Number(initialData.paidAmount ?? 0) : ''
+    );
 
     // New Feature State
     const [description, setDescription] = useState(initialData?.description || '');
@@ -109,71 +115,20 @@ export default function CreatePurchaseInvoicePage({ onCancel, initialData }: { o
     // Add Party Modal
     const [isPartyModalOpen, setIsPartyModalOpen] = useState(false);
 
-    const refreshItems = async () => {
-        try {
-            const itemsData = await fetchItems();
-            const flattenedItems = itemsData.map((item: any) => {
-                const details = item.product || item.service || {};
-                return {
-                    ...details,
-                    ...item,
-                    purchasePrice: details.purchasePrice || item.purchasePrice,
-                    salePrice: details.salePrice || item.salePrice,
-                    taxRate: details.taxRate || item.taxRate,
-                    unit: details.unit || item.unit,
-                };
-            });
-            setAllItems(flattenedItems);
-        } catch (error) {
-            console.error("Failed to refresh items", error);
-        }
-    };
+    // Items/parties/companies come from shared cache — no individual fetches needed
+    const refreshItems = () => { /* cache auto-updates */ };
+    const refreshParties = () => { /* cache auto-updates */ };
 
-    const refreshParties = async () => {
-        try {
-            const partiesData = await fetchParties();
-            setParties(partiesData);
-        } catch (error) {
-            console.error("Failed to refresh parties", error);
-        }
-    };
+    // Client-side party filtering (no extra API call on each keystroke)
+    const filteredParties = useMemo(() =>
+        partySearch.trim()
+            ? parties.filter((p: any) => p.name?.toLowerCase().includes(partySearch.toLowerCase()))
+            : parties,
+        [parties, partySearch]
+    );
 
     // Helper: Find selected party object for displaying phone/balance
-    const selectedParty = parties.find(p => p._id === selectedPartyId);
-
-    useEffect(() => {
-        const loadData = async () => {
-            try {
-                const [partiesData, companiesData, itemsData] = await Promise.all([
-                    fetchParties(partySearch),
-                    fetchCompanies(),
-                    fetchItems()
-                ]);
-                setParties(partiesData);
-                setCompanies(companiesData);
-
-                const flattenedItems = itemsData.map((item: any) => {
-                    const details = item.product || item.service || {};
-                    return {
-                        ...details,
-                        ...item,
-                        purchasePrice: details.purchasePrice || item.purchasePrice,
-                        salePrice: details.salePrice || item.salePrice,
-                        taxRate: details.taxRate || item.taxRate,
-                        unit: details.unit || item.unit,
-                    };
-                });
-                setAllItems(flattenedItems);
-                // bill number assigned sequentially by backend on save
-            } catch (error) {
-                console.error("Failed to load data", error);
-            }
-        };
-        const timer = setTimeout(() => {
-            loadData();
-        }, 300);
-        return () => clearTimeout(timer);
-    }, [partySearch]);
+    const selectedParty = parties.find((p: any) => p._id === selectedPartyId);
 
     // Close dropdown on outside click
     useEffect(() => {
@@ -206,22 +161,23 @@ export default function CreatePurchaseInvoicePage({ onCancel, initialData }: { o
         setDropdownCoords(null);
     };
 
-    const calculateItemAmount = (item: Item) => {
+    const calculateItemAmount = useCallback((item: Item) => {
         const base = (Number(item.qty) || 0) * (Number(item.price) || 0);
         const discountAmount = base * ((Number(item.discountPercent) || 0) / 100);
         const taxRate = (item.tax === 'NONE' || item.tax === 'EXEMPT' || !item.tax) ? 0 : (parseFloat(item.tax.replace(/[^0-9.]/g, '')) || 0);
         const amountAfterDisc = base - discountAmount;
         const taxAmount = amountAfterDisc * (taxRate / 100);
         return amountAfterDisc + taxAmount;
-    };
+    }, []);
 
-    const totalQty = items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
-    const subTotal = items.reduce((sum, item) => sum + calculateItemAmount(item), 0);
-    const effectiveRoundOff = isRoundOffEnabled ? roundOff : 0;
-    const totalAmount = subTotal + Number(effectiveRoundOff);
-
-    const parsedPaidAmount = Number(paidAmount) || 0;
-    const balanceDue = totalAmount - parsedPaidAmount;
+    const { totalQty, subTotal, effectiveRoundOff, totalAmount, balanceDue } = useMemo(() => {
+        const tQty = items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+        const sTotal = items.reduce((sum, item) => sum + calculateItemAmount(item), 0);
+        const eRoundOff = isRoundOffEnabled ? roundOff : 0;
+        const tAmount = sTotal + Number(eRoundOff);
+        const parsedPaid = Number(paidAmount) || 0;
+        return { totalQty: tQty, subTotal: sTotal, effectiveRoundOff: eRoundOff, totalAmount: tAmount, balanceDue: tAmount - parsedPaid };
+    }, [items, isRoundOffEnabled, roundOff, paidAmount, calculateItemAmount]);
 
     const handleSave = async () => {
         if (!companies.length) {
@@ -240,7 +196,7 @@ export default function CreatePurchaseInvoicePage({ onCancel, initialData }: { o
         formData.append('grandTotal', totalAmount.toString());
         formData.append('roundOff', effectiveRoundOff.toString());
         formData.append('paymentType', 'Cash');
-        formData.append('paidAmount', parsedPaidAmount.toString());
+        formData.append('paidAmount', (Number(paidAmount) || 0).toString());
         formData.append('balanceDue', balanceDue.toString());
         formData.append('isPaid', (balanceDue <= 0).toString());
         formData.append('description', description);
@@ -319,7 +275,7 @@ export default function CreatePurchaseInvoicePage({ onCancel, initialData }: { o
                                         <CommandList>
                                             <CommandEmpty>No party found.</CommandEmpty>
                                             <CommandGroup>
-                                                {parties.map((party) => (
+                                                {filteredParties.map((party: any) => (
                                                     <CommandItem
                                                         key={party._id}
                                                         value={party.name}
@@ -355,7 +311,7 @@ export default function CreatePurchaseInvoicePage({ onCancel, initialData }: { o
                         {selectedParty && <p className="text-xs text-gray-500 pl-1">Party Balance: <span className={cn("font-medium", selectedParty.currentBalance > 0 ? "text-green-600" : "text-red-600")}>{selectedParty.currentBalance}</span></p>}
                     </div>
                     <div className="space-y-3">
-                        <div className="flex items-center justify-end"><label className="text-sm text-gray-500 w-32">Bill Number</label><Input className="w-48" value={billNumber} onChange={(e) => setBillNumber(e.target.value)} /></div>
+                        <div className="flex items-center justify-end"><label className="text-sm text-gray-500 w-32">Bill Number</label><Input className="w-48" placeholder="Auto" value={billNumber} onChange={(e) => setBillNumber(e.target.value)} /></div>
                         <div className="flex items-center justify-end"><label className="text-sm text-gray-500 w-32">Bill Date</label><Popover><PopoverTrigger asChild><Button variant={"outline"} className={cn("w-48 justify-start text-left font-normal", !billDate && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4" />{billDate ? format(billDate, "dd/MM/yyyy") : <span>Pick a date</span>}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={billDate} onSelect={setBillDate} initialFocus /></PopoverContent></Popover></div>
                         <div className="flex items-center justify-end"><label className="text-sm text-gray-500 w-32">State of supply</label><Select><SelectTrigger className="w-48"><SelectValue placeholder="Select" /></SelectTrigger><SelectContent>{indianStates.map(state => (<SelectItem key={state} value={state}>{state}</SelectItem>))}</SelectContent></Select></div>
                     </div>
@@ -544,11 +500,9 @@ export default function CreatePurchaseInvoicePage({ onCancel, initialData }: { o
                                 <Input
                                     type="number"
                                     placeholder="0"
-                                    className="w-full pl-8 bg-gray-50 cursor-not-allowed"
+                                    className="w-full pl-8"
                                     value={paidAmount}
-                                    onChange={(e) => { if (!initialData) setPaidAmount(e.target.value); }}
-                                    readOnly={!!initialData}
-                                    title={initialData ? "Use 'Make Payment' to record payments against this bill" : undefined}
+                                    onChange={(e) => setPaidAmount(e.target.value)}
                                 />
                             </div>
                         </div>
@@ -561,8 +515,8 @@ export default function CreatePurchaseInvoicePage({ onCancel, initialData }: { o
                                     <span className="text-gray-800">
                                         ₹ {Math.abs((selectedParty.currentBalance || 0) - balanceDue).toFixed(2)}
                                     </span>
-                                    <span className={((selectedParty.currentBalance || 0) - balanceDue) < 0 ? 'text-red-500 ml-1 text-sm' : 'text-green-500 ml-1 text-sm'}>
-                                        {((selectedParty.currentBalance || 0) - balanceDue) < 0 ? '(To Pay)' : '(To Receive)'}
+                                    <span className={((selectedParty.currentBalance || 0) - balanceDue) > 0 ? 'text-red-500 ml-1 text-sm' : 'text-green-500 ml-1 text-sm'}>
+                                        {((selectedParty.currentBalance || 0) - balanceDue) > 0 ? '(To Pay)' : '(To Receive)'}
                                     </span>
                                 </div>
                             </div>

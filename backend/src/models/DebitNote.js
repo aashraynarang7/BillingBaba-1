@@ -67,4 +67,6 @@ const debitNoteSchema = new mongoose.Schema({
     updatedAt: { type: Date, default: Date.now }
 });
 
+debitNoteSchema.index({ companyId: 1, createdAt: -1 });
+
 module.exports = mongoose.model('DebitNote', debitNoteSchema);

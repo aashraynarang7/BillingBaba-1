@@ -1,5 +1,5 @@
 import React from "react";
-import ReportsSidebar from "./ReportsSidebar"; // Assuming sidebar is in the same folder
+import ReportsSidebar from "./ReportsSidebar";
 
 export default function ReportsLayout({
   children,
@@ -7,9 +7,9 @@ export default function ReportsLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex h-full w-full bg-background-light overflow-hidden">
+    <div className="flex w-full" style={{ height: '100%' }}>
       <ReportsSidebar />
-      <div className="flex-1 overflow-y-auto p-6">{children}</div>
+      <div className="flex-1 overflow-y-scroll p-6">{children}</div>
     </div>
   );
 }

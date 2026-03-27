@@ -31,7 +31,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { fetchParties, fetchCompanies, createPurchase } from '@/lib/api';
+import { fetchParties, fetchCompanies, createPurchase, updatePurchase } from '@/lib/api';
 import { Textarea } from "@/components/ui/textarea";
 import { EditPartyModal } from '@/components/dashboard/party/EditPartyModal';
 import { toast } from '@/components/ui/use-toast';
@@ -47,10 +47,10 @@ type AssetLineItem = {
     tax: string;
 };
 
-export default function CreatePurchaseFAPage({ onCancel }: { onCancel: () => void }) {
-    const isCancelled = false;
-    const [billDate, setBillDate] = useState<Date | undefined>(new Date());
-    const [dueDate, setDueDate] = useState<Date | undefined>(new Date());
+export default function CreatePurchaseFAPage({ onCancel, initialData }: { onCancel: () => void; initialData?: any }) {
+    const isCancelled = initialData?.status === 'Cancelled';
+    const [billDate, setBillDate] = useState<Date | undefined>(initialData?.billDate ? new Date(initialData.billDate) : new Date());
+    const [dueDate, setDueDate] = useState<Date | undefined>(initialData?.dueDate ? new Date(initialData.dueDate) : new Date());
     const [billTime, setBillTime] = useState(format(new Date(), 'hh:mm a'));
 
     // API Data
@@ -58,22 +58,31 @@ export default function CreatePurchaseFAPage({ onCancel }: { onCancel: () => voi
     const [companies, setCompanies] = useState<any[]>([]);
 
     // Form State
-    const [selectedPartyId, setSelectedPartyId] = useState<string>('');
-    const [billNumber, setBillNumber] = useState('');
-    const [eWayBillNo, setEWayBillNo] = useState('');
-    const [items, setItems] = useState<AssetLineItem[]>([
-        { id: 1, name: '', description: '', qty: 0, price: 0, tax: 'NONE' }
-    ]);
-    const [roundOff, setRoundOff] = useState(0);
-    const [isRoundOffEnabled, setIsRoundOffEnabled] = useState(false);
+    const [selectedPartyId, setSelectedPartyId] = useState<string>(initialData?.partyId?._id || initialData?.partyId || '');
+    const [billNumber, setBillNumber] = useState(initialData?.billNumber || '');
+    const [eWayBillNo, setEWayBillNo] = useState(initialData?.eWayBillNo || '');
+    const [items, setItems] = useState<AssetLineItem[]>(
+        initialData?.items?.length
+            ? initialData.items.map((i: any, idx: number) => ({
+                id: idx + 1,
+                name: i.name,
+                description: i.description || '',
+                qty: i.quantity || 0,
+                price: i.priceUnit?.amount || 0,
+                tax: i.tax?.rate ? `GST@${i.tax.rate}%` : 'NONE',
+            }))
+            : [{ id: 1, name: '', description: '', qty: 0, price: 0, tax: 'NONE' }]
+    );
+    const [roundOff, setRoundOff] = useState(initialData?.roundOff || 0);
+    const [isRoundOffEnabled, setIsRoundOffEnabled] = useState(!!(initialData?.roundOff));
 
     // Party Search State
     const [partyOpen, setPartyOpen] = useState(false);
     const [partySearch, setPartySearch] = useState("");
 
     // New Feature State
-    const [description, setDescription] = useState('');
-    const [showDescription, setShowDescription] = useState(false);
+    const [description, setDescription] = useState(initialData?.description || '');
+    const [showDescription, setShowDescription] = useState(!!(initialData?.description));
     const [images, setImages] = useState<File[]>([]);
     const [documents, setDocuments] = useState<File[]>([]);
 
@@ -199,12 +208,17 @@ export default function CreatePurchaseFAPage({ onCancel }: { onCancel: () => voi
         documents.forEach((file) => formData.append('documents', file));
 
         try {
-            await createPurchase(formData);
-            toast({ title: "Purchase FA Created Successfully!", className: "bg-green-500 text-white" });
+            if (initialData?._id) {
+                await updatePurchase(initialData._id, formData);
+                toast({ title: "Purchase FA Updated Successfully!", className: "bg-green-500 text-white" });
+            } else {
+                await createPurchase(formData);
+                toast({ title: "Purchase FA Created Successfully!", className: "bg-green-500 text-white" });
+            }
             onCancel();
         } catch (error) {
-            console.error("Error creating purchase FA", error);
-            toast({ title: "Failed to create purchase FA", variant: "destructive" });
+            console.error("Error saving purchase FA", error);
+            toast({ title: "Failed to save purchase FA", variant: "destructive" });
         }
     };
 
@@ -289,7 +303,7 @@ export default function CreatePurchaseFAPage({ onCancel }: { onCancel: () => voi
 
                         <div className="flex items-center justify-end gap-2">
                             <label className="text-sm text-gray-500 w-24">Bill Number</label>
-                            <Input className="w-48" placeholder="Bill Number" value={billNumber} onChange={(e) => setBillNumber(e.target.value)} />
+                            <Input className="w-48" placeholder="Auto" value={billNumber} onChange={(e) => setBillNumber(e.target.value)} />
                         </div>
                         <div className="flex items-center justify-end gap-2">
                             <label className="text-sm text-gray-500 w-24">Bill Date</label>

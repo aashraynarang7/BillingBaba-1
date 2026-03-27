@@ -9,9 +9,22 @@ import {
   FileText,
   Edit,
   Trash2,
+  AlertTriangle,
 } from 'lucide-react';
-import AddItemModal from '../component/AddItemModal';
 import { fetchItems, deleteItem, fetchTransactionsByItem } from '@/lib/api';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import dynamic from 'next/dynamic';
+
+const AddItemModal = dynamic(() => import('../component/AddItemModal'), { ssr: false });
 import { toast } from '@/components/ui/use-toast';
 
 const ServicesTab = () => {
@@ -25,6 +38,8 @@ const ServicesTab = () => {
   const [isItemActionsDropdownOpen, setIsItemActionsDropdownOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; itemId: string; itemName: string }>({ open: false, itemId: '', itemName: '' });
+  const [deleteError, setDeleteError] = useState<{ open: boolean; message: string; breakdown: { type: string; count: number }[] }>({ open: false, message: '', breakdown: [] });
 
   const loadItems = async () => {
     try {
@@ -69,20 +84,25 @@ const ServicesTab = () => {
     loadTransactions();
   }, [selectedItem]);
 
-  const handleDeleteItem = async (id: string) => {
-    if (confirm('Are you sure you want to delete this service?')) {
-      try {
-        await deleteItem(id);
-        if (selectedItem?._id === id) setSelectedItem(null);
-        await loadItems();
-        toast({ title: 'Service deleted successfully' });
-      } catch (error: any) {
-        toast({
-          title: 'Cannot Delete Service',
-          description: error.message || 'Failed to delete service',
-          variant: 'destructive',
-        });
-      }
+  const handleDeleteItem = (id: string) => {
+    const item = items.find(i => i._id === id);
+    setDeleteDialog({ open: true, itemId: id, itemName: item?.name || 'this service' });
+  };
+
+  const confirmDeleteItem = async () => {
+    const { itemId } = deleteDialog;
+    setDeleteDialog(prev => ({ ...prev, open: false }));
+    try {
+      await deleteItem(itemId);
+      if (selectedItem?._id === itemId) setSelectedItem(null);
+      await loadItems();
+      toast({ title: 'Service deleted successfully' });
+    } catch (error: any) {
+      setDeleteError({
+        open: true,
+        message: error.message || 'Failed to delete service',
+        breakdown: error.breakdown || [],
+      });
     }
   };
 
@@ -381,6 +401,58 @@ const ServicesTab = () => {
           )}
         </div>
       </div>
+
+      {/* --- DELETE CONFIRMATION DIALOG --- */}
+      <AlertDialog open={deleteDialog.open} onOpenChange={open => setDeleteDialog(prev => ({ ...prev, open }))}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Service</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <span className="font-semibold text-gray-800">{deleteDialog.itemName}</span>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteItem} className="bg-red-600 hover:bg-red-700 text-white">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* --- DELETE VALIDATION ERROR DIALOG --- */}
+      <AlertDialog open={deleteError.open} onOpenChange={open => setDeleteError(prev => ({ ...prev, open }))}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              Cannot Delete Service
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-gray-700">
+                <p>{deleteError.message}</p>
+                {deleteError.breakdown.length > 0 && (
+                  <div className="rounded-lg border border-red-100 bg-red-50 p-3 space-y-1">
+                    <p className="font-semibold text-red-700 text-xs uppercase tracking-wide mb-2">Linked Transactions</p>
+                    {deleteError.breakdown.map(b => (
+                      <div key={b.type} className="flex justify-between text-sm">
+                        <span className="text-gray-700">{b.type}</span>
+                        <span className="font-semibold text-red-600">{b.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-gray-500">Please cancel or delete all related transactions before deleting this service.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setDeleteError(prev => ({ ...prev, open: false }))}>
+              OK
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AddItemModal
         isOpen={isAddModalOpen}

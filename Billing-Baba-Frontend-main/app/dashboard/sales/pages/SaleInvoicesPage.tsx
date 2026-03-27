@@ -4,17 +4,18 @@ import { useState, useEffect } from 'react';
 import TransactionsTable from '../component/TransactionsTable';
 import { Transaction } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowUpRight, Plus, Search, MessageCircle } from 'lucide-react';
+import { ArrowUpRight, Plus } from 'lucide-react';
 import FilterBar from '../component/FilterBar';
 import { fetchSaleInvoices } from '@/lib/api';
-import PaymentInModal from '../component/PaymentInModal';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
-import CreateSaleInvoicePage from './CreateSaleInvoicePage';
-import CreateCreditNotePage from './CreateCreditNotePage';
-import { InvoicePreview } from '../component/InvoicePreview';
 import { toast } from '@/components/ui/use-toast';
-import WhatsAppSetupModal from '@/components/dashboard/WhatsAppSetupModal';
+import dynamic from 'next/dynamic';
+
+const CreateSaleInvoicePage = dynamic(() => import('./CreateSaleInvoicePage'), { ssr: false });
+const CreateCreditNotePage = dynamic(() => import('./CreateCreditNotePage'), { ssr: false });
+const InvoicePreview = dynamic(() => import('../component/InvoicePreview').then(m => ({ default: m.InvoicePreview })), { ssr: false });
+const PaymentInModal = dynamic(() => import('../component/PaymentInModal'), { ssr: false });
 
 const SaleInvoices = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -28,8 +29,7 @@ const SaleInvoices = () => {
   const [creditNoteSource, setCreditNoteSource] = useState<Transaction | null>(null);
   const [printInvoiceData, setPrintInvoiceData] = useState<any>(null);
   const [filters, setFilters] = useState<any>({});
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isWhatsAppSetupOpen, setIsWhatsAppSetupOpen] = useState(false);
+  const [availableStatuses, setAvailableStatuses] = useState<string[]>([]);
 
   const loadInvoices = async () => {
     setIsLoading(true);
@@ -44,7 +44,7 @@ const SaleInvoices = () => {
         partyName: inv.partyName || "Unknown",
         partyId: inv.partyId?._id || inv.partyId || undefined,
         phone: inv.partyId?.phone || inv.phone || '',
-        transactionType: 'Sale',
+        transactionType: inv.saleMode === 'POS' ? 'POS Sale' : 'Sale',
         paymentType: inv.paymentType || "Cash",
         amount: Number(inv.grandTotal) || 0,
         balance: Number(inv.balanceDue) || 0,
@@ -68,6 +68,9 @@ const SaleInvoices = () => {
       });
 
       setTransactions(mappedInvoices);
+      if (!filters.status) {
+        setAvailableStatuses([...new Set(mappedInvoices.map((t: any) => t.status).filter(Boolean))] as string[]);
+      }
     } catch (error) {
       console.error("Failed to fetch invoices", error);
     } finally {
@@ -81,20 +84,25 @@ const SaleInvoices = () => {
     }
   }, [isCreatingInvoice, editingInvoice, filters]);
 
-  const filteredTransactions = searchQuery.trim()
-    ? transactions.filter(t => {
-        const q = searchQuery.trim().toLowerCase();
-        return (
-          String(t.invoiceNo || '').toLowerCase().includes(q) ||
-          String(t.amount || '').includes(q) ||
-          String(t.balance || '').includes(q) ||
-          (t.partyName || '').toLowerCase().includes(q)
-        );
-      })
-    : transactions;
+  useEffect(() => {
+    const preload = () => {
+      import('./CreateSaleInvoicePage');
+      import('./CreateCreditNotePage');
+      import('../component/InvoicePreview');
+      import('../component/PaymentInModal');
+    };
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      const id = (window as any).requestIdleCallback(preload, { timeout: 2000 });
+      return () => (window as any).cancelIdleCallback(id);
+    } else {
+      const t = setTimeout(preload, 1000);
+      return () => clearTimeout(t);
+    }
+  }, []);
 
-  const totalAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
-  const totalBalance = transactions.reduce((sum, t) => sum + t.balance, 0);
+  const activeTransactions = transactions.filter(t => t.status !== 'Cancelled');
+  const totalAmount = activeTransactions.reduce((sum, t) => sum + t.amount, 0);
+  const totalBalance = activeTransactions.reduce((sum, t) => sum + t.balance, 0);
   const totalReceived = totalAmount - totalBalance;
 
   const handleFilterChange = (newFilters: any) => {
@@ -107,18 +115,23 @@ const SaleInvoices = () => {
   };
 
   const handleDelete = async (id: string) => {
-    const transaction = transactions.find(t => t.id === id);
-    if (transaction?.transactionType === 'Payment In') {
-      toast({ title: "Payment records cannot be cancelled here", variant: "destructive" });
-      return;
+    if (!confirm("Permanently delete this invoice? This cannot be undone.")) return;
+    try {
+      const { deleteSale } = await import('@/lib/api');
+      await deleteSale(id);
+      loadInvoices();
+    } catch (error: any) {
+      toast({ title: error.message || "Failed to delete invoice", variant: "destructive" });
     }
-    if (!confirm("Are you sure you want to cancel this invoice?")) return;
+  };
+
+  const handleCancel = async (id: string) => {
+    if (!confirm("Cancel this invoice? It will be marked as Cancelled.")) return;
     try {
       const { cancelSale } = await import('@/lib/api');
       await cancelSale(id);
       loadInvoices();
     } catch (error: any) {
-      console.error("Failed to cancel", error);
       toast({ title: error.message || "Failed to cancel invoice", variant: "destructive" });
     }
   };
@@ -132,13 +145,6 @@ const SaleInvoices = () => {
     setPaymentPartyId(partyId);
     setPaymentAmount(amount);
     setPaymentInvoiceId(invoiceId || null);
-    setIsPaymentInOpen(true);
-  };
-
-  const handleCreateNewPayment = () => {
-    setPaymentPartyId(null);
-    setPaymentAmount(null);
-    setPaymentInvoiceId(null);
     setIsPaymentInOpen(true);
   };
 
@@ -199,41 +205,13 @@ const SaleInvoices = () => {
       <Card className="shadow-sm">
         <CardContent className="p-0 divide-y">
           <div className="p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-            <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
-              <FilterBar onFilterChange={handleFilterChange} />
-              <div className="relative">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Search invoice no, amount, balance..."
-                  className="pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 w-64"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={() => setIsCreatingInvoice(true)}
-                className="bg-[var(--accent-orange)] hover:bg-[var(--primary-red)] text-white gap-2"
-              >
-                <Plus size={16} /> Add Sale
-              </Button>
-              <Button
-                onClick={handleCreateNewPayment}
-                className="bg-green-600 hover:bg-green-700 text-white gap-2"
-              >
-                <Plus size={16} /> Payment In
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setIsWhatsAppSetupOpen(true)}
-                className="border-green-500 text-green-700 hover:bg-green-50 gap-2"
-                title="WhatsApp Setup"
-              >
-                <MessageCircle size={16} /> WhatsApp
-              </Button>
-            </div>
+            <FilterBar onFilterChange={handleFilterChange} statusOptions={availableStatuses} />
+            <Button
+              onClick={() => setIsCreatingInvoice(true)}
+              className="bg-[var(--accent-orange)] hover:bg-[var(--primary-red)] text-white gap-2"
+            >
+              <Plus size={16} /> Add Sale
+            </Button>
           </div>
           <div className="p-4">
             <div className="inline-block  p-4 rounded-lg border bg-[var(--accent-orange)]/5 border-purple-200 w-full max-w-sm">
@@ -260,10 +238,11 @@ const SaleInvoices = () => {
       </Card>
 
       <TransactionsTable
-        transactions={filteredTransactions}
+        transactions={transactions}
         showToolbar={true}
         onEdit={handleEdit}
         onDelete={handleDelete}
+        onCancel={handleCancel}
         onView={handleView}
         onPrint={handlePrintRow}
         onDuplicate={handleDuplicate}
@@ -289,10 +268,6 @@ const SaleInvoices = () => {
         />
       )}
 
-      <WhatsAppSetupModal
-        isOpen={isWhatsAppSetupOpen}
-        onClose={() => setIsWhatsAppSetupOpen(false)}
-      />
     </div>
   );
 };

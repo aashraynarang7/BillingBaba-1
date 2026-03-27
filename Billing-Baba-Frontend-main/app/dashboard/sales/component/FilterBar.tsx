@@ -28,13 +28,15 @@ import { cn } from "@/lib/utils";
 
 interface FilterBarProps {
     onFilterChange: (filters: any) => void;
+    statusOptions?: string[];
 }
 
-export default function FilterBar({ onFilterChange }: FilterBarProps) {
+export default function FilterBar({ onFilterChange, statusOptions: externalStatusOptions }: FilterBarProps) {
     // Options
     const dateRangeOptions = ['All Time', 'Today', 'This Week', 'This Month', 'This Year', 'Custom'];
     const godownOptions = ['All Godown', 'Main Location'];
-    const statusOptions = ['All Status', 'Paid', 'Overdue', 'Unpaid'];
+    const defaultStatuses = ['Paid', 'Overdue', 'Unpaid'];
+    const statusOptions = ['All Status', ...(externalStatusOptions && externalStatusOptions.length > 0 ? externalStatusOptions : defaultStatuses)];
 
     // State
     const [dateOption, setDateOption] = useState('All Time');
@@ -43,20 +45,32 @@ export default function FilterBar({ onFilterChange }: FilterBarProps) {
         to: endOfMonth(new Date())
     });
 
-    const [users, setUsers] = useState<{ _id: string, name: string }[]>([]);
+    const [users, setUsers] = useState<{ _id: string, name?: string, phoneNumber?: string }[]>([]);
     const [selectedUser, setSelectedUser] = useState('All Users');
 
     const [selectedGodown, setSelectedGodown] = useState('All Godown');
     const [selectedStatus, setSelectedStatus] = useState('All Status');
 
-    // Fetch Users on Mount
+    // Reset selected status when available options change and current selection is no longer valid
+    useEffect(() => {
+        if (!statusOptions.includes(selectedStatus)) {
+            setSelectedStatus('All Status');
+        }
+    }, [externalStatusOptions]);
+
+    // Fetch Users on Mount — always include "admin" as the default user
     useEffect(() => {
         const loadUsers = async () => {
             try {
                 const data = await fetchUsers();
+                const hasAdmin = data.some((u: any) => (u.name || '').toLowerCase() === 'admin');
+                if (!hasAdmin) {
+                    data.unshift({ _id: 'admin', name: 'Admin' });
+                }
                 setUsers(data);
             } catch (err) {
                 console.error("Failed to load users", err);
+                setUsers([{ _id: 'admin', name: 'Admin' }]);
             }
         };
         loadUsers();
@@ -178,46 +192,32 @@ export default function FilterBar({ onFilterChange }: FilterBarProps) {
                     <Button variant="outline" role="combobox" className="h-10 px-4 text-sm justify-between font-medium min-w-[150px] rounded-full bg-blue-50 border-blue-100 text-black hover:bg-blue-100 hover:text-black">
                         {selectedUser === 'All Users'
                             ? 'All Users'
-                            : users.find((u) => u._id === selectedUser)?.name || 'Select User'}
+                            : users.find((u) => u._id === selectedUser)?.name || users.find((u) => u._id === selectedUser)?.phoneNumber || 'Select User'}
                         <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50 text-black" />
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[200px] p-0 bg-white">
-                    <Command className="text-gray-900 bg-white">
-                        <CommandInput placeholder="Search user..." className="text-gray-900 placeholder:text-gray-400" />
-                        <CommandEmpty className="text-gray-900 py-2 px-4 text-sm">No user found.</CommandEmpty>
-                        <CommandGroup>
+                <PopoverContent className="w-[200px] p-0 bg-white border border-gray-200 shadow-md">
+                    <Command className="bg-white">
+                        <CommandInput placeholder="Search user..." className="text-black placeholder:text-gray-400 border-b border-gray-100" />
+                        <CommandEmpty className="text-black py-2 px-4 text-sm">No user found.</CommandEmpty>
+                        <CommandGroup className="bg-white">
                             <CommandItem
                                 value="All Users"
-                                onSelect={() => {
-                                    setSelectedUser("All Users");
-                                }}
-                                className="text-black cursor-pointer hover:bg-gray-100"
+                                onSelect={() => setSelectedUser("All Users")}
+                                className="text-black bg-white cursor-pointer hover:bg-gray-100 aria-selected:bg-gray-100 aria-selected:text-black"
                             >
-                                <Check
-                                    className={cn(
-                                        "mr-2 h-4 w-4 text-black",
-                                        selectedUser === "All Users" ? "opacity-100" : "opacity-0"
-                                    )}
-                                />
+                                <Check className={cn("mr-2 h-4 w-4 text-black", selectedUser === "All Users" ? "opacity-100" : "opacity-0")} />
                                 All Users
                             </CommandItem>
                             {users.map((user) => (
                                 <CommandItem
                                     key={user._id}
-                                    value={user.name}
-                                    onSelect={() => {
-                                        setSelectedUser(user._id);
-                                    }}
-                                    className="text-black cursor-pointer hover:bg-gray-100"
+                                    value={user.name || user.phoneNumber || user._id}
+                                    onSelect={() => setSelectedUser(user._id)}
+                                    className="text-black bg-white cursor-pointer hover:bg-gray-100 aria-selected:bg-gray-100 aria-selected:text-black"
                                 >
-                                    <Check
-                                        className={cn(
-                                            "mr-2 h-4 w-4 text-black",
-                                            selectedUser === user._id ? "opacity-100" : "opacity-0"
-                                        )}
-                                    />
-                                    {user.name}
+                                    <Check className={cn("mr-2 h-4 w-4 text-black", selectedUser === user._id ? "opacity-100" : "opacity-0")} />
+                                    {user.name || user.phoneNumber || user._id}
                                 </CommandItem>
                             ))}
                         </CommandGroup>

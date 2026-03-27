@@ -91,9 +91,9 @@ export default function PartyWiseProfitLossPage() {
       const to = toDate.toISOString().split("T")[0];
 
       const [salesRes, crNoteRes, itemsRes, partiesRes] = await Promise.all([
-        fetch(`${API_BASE}/sales?type=INVOICE&startDate=${from}&endDate=${to}`, { headers: getHeaders() }),
-        fetch(`${API_BASE}/sales?type=CREDIT_NOTE&startDate=${from}&endDate=${to}`, { headers: getHeaders() }),
-        fetch(`${API_BASE}/items?type=product`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/sales?companyId=${companyId}&type=INVOICE&startDate=${from}&endDate=${to}`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/sales?companyId=${companyId}&type=CREDIT_NOTE&startDate=${from}&endDate=${to}`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/items?companyId=${companyId}&type=product`, { headers: getHeaders() }),
         fetch(`${API_BASE}/parties?companyId=${companyId}`, { headers: getHeaders() }),
       ]);
 
@@ -114,23 +114,26 @@ export default function PartyWiseProfitLossPage() {
         ppMap.set((item.name ?? "").toLowerCase(), item.product?.purchasePrice?.amount ?? 0);
       }
 
-      // Build party phone map
-      const phoneMap = new Map<string, string>();
+      // Build partyId → { name, phone } map from the parties collection
+      const partyIdMap = new Map<string, { name: string; phone: string }>();
       for (const p of parties) {
-        phoneMap.set((p.name ?? "").toLowerCase(), p.phone || "---");
+        partyIdMap.set(p._id?.toString(), { name: p.name ?? "Unknown", phone: p.phone || "---" });
       }
 
-      // Aggregate by partyName
+      // Seed the aggregation map with ALL known parties (so they appear even with zero sales)
       const partyMap = new Map<string, { totalSale: number; profit: number; phone: string }>();
+      for (const p of parties) {
+        partyMap.set(p._id?.toString(), { totalSale: 0, profit: 0, phone: p.phone || "---" });
+      }
 
-      const addDoc = (doc: SaleDoc, sign: 1 | -1) => {
-        const key = doc.partyName || "Cash Sale";
+      const addDoc = (doc: any, sign: 1 | -1) => {
+        // partyId may be a plain string ID or a populated object { _id, name }
+        const rawId = doc.partyId?._id ?? doc.partyId;
+        const idKey = rawId ? rawId.toString() : null;
+        const key = idKey && partyIdMap.has(idKey) ? idKey : `name:${doc.partyName || "Cash Sale"}`;
+
         if (!partyMap.has(key)) {
-          partyMap.set(key, {
-            totalSale: 0,
-            profit: 0,
-            phone: phoneMap.get(key.toLowerCase()) ?? "---",
-          });
+          partyMap.set(key, { totalSale: 0, profit: 0, phone: "---" });
         }
         const entry = partyMap.get(key)!;
         entry.totalSale += sign * (doc.grandTotal ?? 0);
@@ -146,12 +149,15 @@ export default function PartyWiseProfitLossPage() {
       for (const cr of crNotes) addDoc(cr, -1);
 
       const result: PartyRow[] = Array.from(partyMap.entries())
-        .map(([name, val]) => ({
-          partyName: name,
-          phone: val.phone,
-          totalSale: val.totalSale,
-          profit: val.profit,
-        }))
+        .map(([key, val]) => {
+          const resolved = partyIdMap.get(key);
+          return {
+            partyName: resolved?.name ?? key.replace("name:", ""),
+            phone: resolved?.phone ?? val.phone,
+            totalSale: val.totalSale,
+            profit: val.profit,
+          };
+        })
         .sort((a, b) => a.partyName.localeCompare(b.partyName));
 
       setRows(result);

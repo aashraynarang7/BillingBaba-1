@@ -7,6 +7,7 @@ const uploadFields = upload.fields([
     { name: 'image', maxCount: 1 }
 ]);
 
+router.post('/bulk-import', partyController.bulkImportParties);
 router.post('/', uploadFields, partyController.createParty);
 router.get('/', partyController.getParties);
 router.get('/:id', partyController.getPartyById);

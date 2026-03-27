@@ -130,4 +130,9 @@ const purchaseSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 
+purchaseSchema.index({ companyId: 1, createdAt: -1 });
+purchaseSchema.index({ companyId: 1, documentType: 1 });
+purchaseSchema.index({ companyId: 1, isBill: 1 });
+purchaseSchema.index({ partyId: 1 });
+
 module.exports = mongoose.model('Purchase', purchaseSchema);

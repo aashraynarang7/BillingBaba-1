@@ -42,6 +42,7 @@ export default function PaymentInPage() {
     const [editingPayment, setEditingPayment] = useState<any>(null);
 
     const [filters, setFilters] = useState<any>({});
+    const [availableStatuses, setAvailableStatuses] = useState<string[]>([]);
 
     const loadPayments = async () => {
         try {
@@ -56,6 +57,9 @@ export default function PaymentInPage() {
             setIsLoading(true);
             const data = await fetchPaymentIn(filters);
             setTransactions(data);
+            if (!filters.status) {
+                setAvailableStatuses([...new Set(data.map((t: any) => t.status).filter(Boolean))] as string[]);
+            }
         } catch (error) {
             console.error("Failed to fetch payments", error);
         } finally {
@@ -90,7 +94,7 @@ export default function PaymentInPage() {
             <Card className="shadow-sm">
                 <CardContent className="p-0 divide-y">
                     <div className="p-4 border-b flex justify-between items-center">
-                        <FilterBar onFilterChange={handleFilterChange} />
+                        <FilterBar onFilterChange={handleFilterChange} statusOptions={availableStatuses} />
                         <Button
                             onClick={() => setIsPaymentInOpen(true)}
                             className="bg-green-600 hover:bg-green-700 text-white gap-2"

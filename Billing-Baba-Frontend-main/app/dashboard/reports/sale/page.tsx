@@ -18,10 +18,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import { fetchSaleInvoices } from "@/lib/api";
 import { Transaction } from "@/lib/types";
-import TransactionsTable from "@/app/dashboard/sales/component/TransactionsTable";
+import { Loader2 } from "lucide-react";
+
+const TransactionsTable = dynamic(
+  () => import("@/app/dashboard/sales/component/TransactionsTable"),
+  { loading: () => <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></div>, ssr: false }
+);
 
 export default function SaleReportPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -37,7 +43,7 @@ export default function SaleReportPage() {
           date: inv.invoiceDate ? format(new Date(inv.invoiceDate), "dd/MM/yyyy") : "-",
           invoiceNo: inv.invoiceNumber || "-",
           partyName: inv.partyName || "Unknown",
-          transactionType: 'Sale',
+          transactionType: inv.saleMode === 'POS' ? 'POS Sale' : 'Sale',
           paymentType: inv.paymentType || "Cash",
           amount: Number(inv.grandTotal) || 0,
           balance: Number(inv.balanceDue) || 0,
@@ -64,8 +70,9 @@ export default function SaleReportPage() {
     loadData();
   }, []);
 
-  const totalAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
-  const totalBalance = transactions.reduce((sum, t) => sum + t.balance, 0);
+  const activeTransactions = transactions.filter(t => t.status !== 'Cancelled');
+  const totalAmount = activeTransactions.reduce((sum, t) => sum + t.amount, 0);
+  const totalBalance = activeTransactions.reduce((sum, t) => sum + t.balance, 0);
   const totalReceived = totalAmount - totalBalance;
 
   return (

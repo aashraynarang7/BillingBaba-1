@@ -5,15 +5,17 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { format } from 'date-fns';
 import TransactionsTable from '../component/TransactionsTable';
-import { fetchProformaInvoices, cancelSale, convertToInvoice } from '@/lib/api';
-import CreateProformaInvoicePage from './CreateProformaInvoicePage';
-import CreateSaleInvoicePage from './CreateSaleInvoicePage';
-import CreateSaleOrderPage from './CreateSalesOrder';
+import { fetchProformaInvoices, deleteSale, convertToInvoice } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Transaction } from '@/lib/types';
 import FilterBar from '../component/FilterBar';
-import { InvoicePreview } from '../component/InvoicePreview';
 import { toast } from '@/components/ui/use-toast';
+import dynamic from 'next/dynamic';
+
+const CreateProformaInvoicePage = dynamic(() => import('./CreateProformaInvoicePage'), { ssr: false });
+const CreateSaleInvoicePage = dynamic(() => import('./CreateSaleInvoicePage'), { ssr: false });
+const CreateSaleOrderPage = dynamic(() => import('./CreateSalesOrder'), { ssr: false });
+const InvoicePreview = dynamic(() => import('../component/InvoicePreview').then(m => ({ default: m.InvoicePreview })), { ssr: false });
 
 // Illustration Component (Simplified reuse or placeholder)
 const SaleOrderIllustration = () => (
@@ -57,6 +59,7 @@ export default function ProformaInvoicePage() {
 
     // Filters
     const [filters, setFilters] = useState<any>({});
+    const [availableStatuses, setAvailableStatuses] = useState<string[]>([]);
 
     const loadData = async () => {
         try {
@@ -78,6 +81,9 @@ export default function ProformaInvoicePage() {
                     ? `Order #${doc.convertedToOrderId.orderNumber}` : undefined,
             }));
             setInvoices(mapped);
+            if (!filters.status) {
+                setAvailableStatuses([...new Set(mapped.map((t: any) => t.status).filter(Boolean))] as string[]);
+            }
         } catch (error) {
             console.error("Failed to load proforma invoices", error);
         }
@@ -89,19 +95,34 @@ export default function ProformaInvoicePage() {
         }
     }, [isCreating, editingDoc, convertingDoc, convertingToOrderDoc, filters]);
 
+    useEffect(() => {
+        const preload = () => {
+            import('./CreateProformaInvoicePage');
+            import('./CreateSaleInvoicePage');
+            import('./CreateSalesOrder');
+            import('../component/InvoicePreview');
+        };
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+            const id = (window as any).requestIdleCallback(preload, { timeout: 2000 });
+            return () => (window as any).cancelIdleCallback(id);
+        } else {
+            const t = setTimeout(preload, 1000);
+            return () => clearTimeout(t);
+        }
+    }, []);
+
     const handleEdit = (id: string) => {
         const doc = fullDocs.find(d => d._id === id);
         if (doc) setEditingDoc(doc);
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this Proforma Invoice?")) return;
+        if (!confirm("Permanently delete this Proforma Invoice? This cannot be undone.")) return;
         try {
-            await cancelSale(id);
+            await deleteSale(id);
             loadData();
         } catch (error) {
-            console.error("Delete failed", error);
-            toast({ title: "Failed to cancel", variant: "destructive" });
+            toast({ title: "Failed to delete", variant: "destructive" });
         }
     };
 
@@ -172,7 +193,7 @@ export default function ProformaInvoicePage() {
                 {(invoices.length > 0 || Object.keys(filters).length > 0) ? (
                     <div>
                         <div className="flex justify-between items-center mb-4">
-                            <FilterBar onFilterChange={setFilters} />
+                            <FilterBar onFilterChange={setFilters} statusOptions={availableStatuses} />
                             <Button
                                 className="bg-[var(--accent-orange)] hover:bg-[var(--primary-red)] text-white"
                                 onClick={() => setIsCreating(true)}

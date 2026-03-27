@@ -38,10 +38,12 @@ exports.registerUser = async (req, res) => {
     }
 };
 
-// Get all users (Optional, for admin purposes)
+// Get users for a company (used in filter dropdowns)
 exports.getAllUsers = async (req, res) => {
     try {
-        const users = await User.find().sort({ createdAt: -1 });
+        const { companyId } = req.query;
+        const query = companyId ? { companies: companyId } : {};
+        const users = await User.find(query).select('_id phoneNumber').sort({ createdAt: -1 });
         res.json(users);
     } catch (error) {
         res.status(500).json({ error: error.message });

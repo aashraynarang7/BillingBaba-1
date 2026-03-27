@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useSettings } from "@/components/providers/SettingsContext";
+import type { AppSettings } from "@/components/providers/SettingsContext";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -43,6 +45,7 @@ interface SubItem {
   name: string;
   type: "link" | "action";
   path: string;
+  settingKey?: keyof AppSettings; // if set, hide this item when setting is false
 }
 
 interface MenuItem {
@@ -74,11 +77,11 @@ const menuItems: MenuItem[] = [
     path: "/dashboard/sales",
     subItems: [
       { name: "Sale Invoices", type: "action", path: "/dashboard/sales?view=invoices" },
-      { name: "Estimate/ Quotation", type: "action", path: "/dashboard/sales?view=quotation" },
-      { name: "Proforma Invoice", type: "link", path: "/dashboard/sales?view=proforma" },
+      { name: "Estimate/ Quotation", type: "action", path: "/dashboard/sales?view=quotation", settingKey: "showEstimate" },
+      { name: "Proforma Invoice", type: "link", path: "/dashboard/sales?view=proforma", settingKey: "showProformaInvoice" },
       { name: "Payment-In", type: "action", path: "/dashboard/sales?view=payment-in" },
-      { name: "Sale Order", type: "link", path: "/dashboard/sales?view=order" },
-      { name: "Delivery Challan", type: "link", path: "/dashboard/sales?view=challan" },
+      { name: "Sale Order", type: "link", path: "/dashboard/sales?view=order", settingKey: "showSalePurchaseOrder" },
+      { name: "Delivery Challan", type: "link", path: "/dashboard/sales?view=challan", settingKey: "showDeliveryChallan" },
       { name: "Job Work Out", type: "link", path: "/dashboard/sales?view=job-work-out" },
       { name: "Sale Return/ Credit Note", type: "action", path: "/dashboard/sales?view=return" },
       { name: "Billing Baba POS", type: "link", path: "/dashboard/sales?view=pos" },
@@ -93,8 +96,8 @@ const menuItems: MenuItem[] = [
       { name: "Purchase Bills", type: "action", path: "/dashboard/purchases/bills" },
       { name: "Payment-Out", type: "action", path: "/dashboard/purchases/payment-out" },
       { name: "Expenses", type: "action", path: "/dashboard/purchases/expenses" },
-      { name: "Purchase FA", type: "action", path: "/dashboard/purchases/fa" },
-      { name: "Purchase Order", type: "link", path: "/dashboard/purchases/order" },
+      { name: "Purchase FA", type: "action", path: "/dashboard/purchases/fa", settingKey: "showFixedAssets" },
+      { name: "Purchase Order", type: "link", path: "/dashboard/purchases/order", settingKey: "showSalePurchaseOrder" },
       { name: "Purchase Return/ Dr. Note", type: "action", path: "/dashboard/purchases/return" },
     ],
   },
@@ -179,6 +182,18 @@ export default function Sidebar({ isMobileMenuOpen }: SidebarProps) {
   const [companyName, setCompanyName] = useState<string>("Company");
   const size = useWindowSize();
   const isMobile = size.width ? size.width < 768 : false;
+  const { settings } = useSettings();
+
+  // Filter menu items based on settings
+  const visibleMenuItems = useMemo(() =>
+    menuItems.map(item => ({
+      ...item,
+      subItems: item.subItems?.filter(sub =>
+        !sub.settingKey || settings[sub.settingKey] !== false
+      ),
+    })),
+    [settings]
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -193,7 +208,7 @@ export default function Sidebar({ isMobileMenuOpen }: SidebarProps) {
     };
   }, []);
 
-  // Fetch active company name
+  // Fetch active company name — runs once on mount only (not on every route change)
   useEffect(() => {
     const companyId = localStorage.getItem("activeCompanyId");
     if (!companyId) return;
@@ -204,7 +219,7 @@ export default function Sidebar({ isMobileMenuOpen }: SidebarProps) {
         if (found?.name) setCompanyName(found.name);
       })
       .catch(() => {});
-  }, [pathname]);
+  }, []);
 
   useEffect(() => {
     const activeParent = menuItems.find(
@@ -230,9 +245,9 @@ export default function Sidebar({ isMobileMenuOpen }: SidebarProps) {
 
   const showText = isMobile || isExpanded;
 
-  const handleDropdownClick = (itemName: string) => {
-    setOpenDropdown(openDropdown === itemName ? null : itemName);
-  };
+  const handleDropdownClick = useCallback((itemName: string) => {
+    setOpenDropdown(prev => prev === itemName ? null : itemName);
+  }, []);
 
   return (
     <>
@@ -292,7 +307,7 @@ export default function Sidebar({ isMobileMenuOpen }: SidebarProps) {
 
           <nav className="flex-grow overflow-y-auto px-3 thin-scrollbar">
             <ul>
-              {menuItems.map((item) => {
+              {visibleMenuItems.map((item) => {
                 const isAnySubItemActive = item.subItems
                   ? item.subItems.some((sub) => {
                     const [path, query] = sub.path.split("?");

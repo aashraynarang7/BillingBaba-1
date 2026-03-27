@@ -6,6 +6,29 @@ const Party = require('../models/Party');
 const DebitNote = require('../models/DebitNote');
 const PaymentOut = require('../models/PaymentOut');
 
+// Returns the next sequential number for a document type, always higher than the current max
+const getNextNumber = async (Model, companyId, field, extraFilter = {}) => {
+    const docs = await Model.find({ companyId, ...extraFilter }).select(field).lean();
+    let max = 0;
+    for (const d of docs) {
+        const val = d[field];
+        if (val) {
+            const n = parseInt(String(val).split('-').pop(), 10);
+            if (!isNaN(n) && n > max) max = n;
+        }
+    }
+    return max + 1;
+};
+
+// Batch-fetch Items by IDs to avoid N+1 queries inside loops
+const batchGetItems = async (itemIds, session) => {
+    if (!itemIds || itemIds.length === 0) return new Map();
+    const query = Item.find({ _id: { $in: itemIds } }).lean();
+    if (session) query.session(session);
+    const items = await query;
+    return new Map(items.map(item => [item._id.toString(), item]));
+};
+
 exports.createPurchase = async (req, res) => {
     const session = await Purchase.startSession();
     session.startTransaction();
@@ -36,14 +59,7 @@ exports.createPurchase = async (req, res) => {
             delete purchaseData.documentType;
 
             if (!purchaseData.returnNo) {
-                const last = await DebitNote.findOne({ companyId: purchaseData.companyId }).sort({ createdAt: -1 });
-                let nextNum = 1;
-                if (last && last.returnNo) {
-                    const parts = last.returnNo.split('-');
-                    const lastNum = parseInt(parts[parts.length - 1]);
-                    if (!isNaN(lastNum)) nextNum = lastNum + 1;
-                }
-                purchaseData.returnNo = `${nextNum}`;
+                purchaseData.returnNo = `${await getNextNumber(DebitNote, purchaseData.companyId, 'returnNo')}`;
             }
 
             const debitNote = new DebitNote(purchaseData);
@@ -51,15 +67,20 @@ exports.createPurchase = async (req, res) => {
 
             // Effect 1: Decrease Stock (Goods returned to supplier)
             if (debitNote.items && debitNote.items.length > 0) {
+                const dnItemIds = debitNote.items.filter(i => i.itemId).map(i => i.itemId);
+                const dnItemsMap = await batchGetItems(dnItemIds, session);
+                const dnProductUpdates = {};
                 for (const lineItem of debitNote.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId).session(session);
+                        const itemDoc = dnItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
-                            const qty = Number(lineItem.quantity);
-                            // Debit Note -> Decrease Stock 
-                            await Product.findByIdAndUpdate(itemDoc.product, { $inc: { 'currentQuantity': -qty } }, { session });
+                            const productId = itemDoc.product.toString();
+                            dnProductUpdates[productId] = (dnProductUpdates[productId] || 0) - Number(lineItem.quantity);
                         }
                     }
+                }
+                for (const [productId, change] of Object.entries(dnProductUpdates)) {
+                    await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } }, { session });
                 }
             }
 
@@ -89,28 +110,14 @@ exports.createPurchase = async (req, res) => {
                 purchaseData.isBill = true;
             }
 
-            // Sequential billNumber for BILL and FA types
+            // Sequential billNumber for BILL and FA types (separate sequence per type)
             if ((purchaseData.documentType === 'BILL' || purchaseData.documentType === 'FA') && !purchaseData.billNumber) {
-                const last = await Purchase.findOne({ companyId: purchaseData.companyId, isBill: true }).sort({ createdAt: -1 });
-                let nextNum = 1;
-                if (last && last.billNumber) {
-                    const parts = last.billNumber.split('-');
-                    const lastNum = parseInt(parts[parts.length - 1]);
-                    if (!isNaN(lastNum)) nextNum = lastNum + 1;
-                }
-                purchaseData.billNumber = `${nextNum}`;
+                purchaseData.billNumber = `${await getNextNumber(Purchase, purchaseData.companyId, 'billNumber', { isBill: true })}`;
             }
 
             // Sequential orderNumber for PO type
             if (purchaseData.documentType === 'PO' && !purchaseData.orderNumber) {
-                const last = await Purchase.findOne({ companyId: purchaseData.companyId, documentType: 'PO' }).sort({ createdAt: -1 });
-                let nextNum = 1;
-                if (last && last.orderNumber) {
-                    const parts = last.orderNumber.split('-');
-                    const lastNum = parseInt(parts[parts.length - 1]);
-                    if (!isNaN(lastNum)) nextNum = lastNum + 1;
-                }
-                purchaseData.orderNumber = `${nextNum}`;
+                purchaseData.orderNumber = `${await getNextNumber(Purchase, purchaseData.companyId, 'orderNumber', { documentType: 'PO' })}`;
             }
 
             const purchase = new Purchase(purchaseData);
@@ -122,23 +129,22 @@ exports.createPurchase = async (req, res) => {
 
                 // 1. Update Stock (Skip for FA and EXPENSE)
                 if (purchase.items && purchase.items.length > 0 && purchase.documentType !== 'FA' && purchase.documentType !== 'EXPENSE') {
+                    const purchItemIds = purchase.items.filter(i => i.itemId).map(i => i.itemId);
+                    const purchItemsMap = await batchGetItems(purchItemIds, session);
+                    const purchProductUpdates = {};
                     for (const lineItem of purchase.items) {
                         if (lineItem.itemId) {
-                            const itemDoc = await Item.findById(lineItem.itemId).session(session);
+                            const itemDoc = purchItemsMap.get(lineItem.itemId.toString());
                             if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
-
                                 const qty = Number(lineItem.quantity);
-                                // If Purchase Bill: Increase Stock
-                                // If Purchase Return: Decrease Stock
                                 const change = purchase.isReturn ? -qty : qty;
-
-                                await Product.findByIdAndUpdate(
-                                    itemDoc.product,
-                                    { $inc: { 'currentQuantity': change } },
-                                    { session }
-                                );
+                                const productId = itemDoc.product.toString();
+                                purchProductUpdates[productId] = (purchProductUpdates[productId] || 0) + change;
                             }
                         }
+                    }
+                    for (const [productId, change] of Object.entries(purchProductUpdates)) {
+                        await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } }, { session });
                     }
                 }
 
@@ -199,6 +205,14 @@ exports.getPurchases = async (req, res) => {
         if (companyId) filter.companyId = companyId;
         if (partyId) filter.partyId = partyId;
         if (req.query.godown) filter.godown = req.query.godown;
+        if (req.query.userId) {
+            if (req.query.userId === 'admin') {
+                filter.$or = [{ createdBy: { $exists: false } }, { createdBy: null }];
+            } else {
+                filter.createdBy = req.query.userId;
+            }
+        }
+        if (req.query.status && req.query.status !== 'All Status') filter.status = req.query.status;
 
         // Sorting Logic
         let sortObj = { createdAt: -1 };
@@ -208,7 +222,7 @@ exports.getPurchases = async (req, res) => {
 
         // Reusable function to handle pagination
         const applyPaginationAndRespond = async (Model, filterToUse) => {
-            let query = Model.find(filterToUse).sort(sortObj).populate('partyId', 'name phone gstin');
+            let query = Model.find(filterToUse).sort(sortObj).lean().populate('partyId', 'name phone gstin');
 
             if (page && limit) {
                 const pageNum = parseInt(page);
@@ -320,14 +334,21 @@ exports.updatePurchase = async (req, res) => {
         if (docToDelete && docToDelete.isBill) {
             // Revert Stock (Decrease since it was a purchase)
             if (docToDelete.items && docToDelete.items.length > 0 && docToDelete.documentType !== 'FA' && docToDelete.documentType !== 'EXPENSE') {
+                const updRevertItemIds = docToDelete.items.filter(i => i.itemId).map(i => i.itemId);
+                const updRevertItemsMap = await batchGetItems(updRevertItemIds, null);
+                const updRevertProductUpdates = {};
                 for (const lineItem of docToDelete.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId);
+                        const itemDoc = updRevertItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
                             const change = docToDelete.isReturn ? Number(lineItem.quantity) : -Number(lineItem.quantity);
-                            await Product.findByIdAndUpdate(itemDoc.product, { $inc: { 'currentQuantity': change } });
+                            const productId = itemDoc.product.toString();
+                            updRevertProductUpdates[productId] = (updRevertProductUpdates[productId] || 0) + change;
                         }
                     }
+                }
+                for (const [productId, change] of Object.entries(updRevertProductUpdates)) {
+                    await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } });
                 }
             }
         }
@@ -337,14 +358,21 @@ exports.updatePurchase = async (req, res) => {
         if (purchase && purchase.isBill) {
             // Apply New Stock (Increase)
             if (purchase.items && purchase.items.length > 0 && purchase.documentType !== 'FA' && purchase.documentType !== 'EXPENSE') {
+                const updApplyItemIds = purchase.items.filter(i => i.itemId).map(i => i.itemId);
+                const updApplyItemsMap = await batchGetItems(updApplyItemIds, null);
+                const updApplyProductUpdates = {};
                 for (const lineItem of purchase.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId);
+                        const itemDoc = updApplyItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
                             const change = purchase.isReturn ? -Number(lineItem.quantity) : Number(lineItem.quantity);
-                            await Product.findByIdAndUpdate(itemDoc.product, { $inc: { 'currentQuantity': change } });
+                            const productId = itemDoc.product.toString();
+                            updApplyProductUpdates[productId] = (updApplyProductUpdates[productId] || 0) + change;
                         }
                     }
+                }
+                for (const [productId, change] of Object.entries(updApplyProductUpdates)) {
+                    await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } });
                 }
             }
         }
@@ -377,17 +405,20 @@ exports.deletePurchase = async (req, res) => {
         if (isDebitNote) {
             // Debit Notes originally decreased stock. Revert by increasing stock.
             if (purchase.items && purchase.items.length > 0) {
+                const delDNItemIds = purchase.items.filter(i => i.itemId).map(i => i.itemId);
+                const delDNItemsMap = await batchGetItems(delDNItemIds, session);
+                const delDNProductUpdates = {};
                 for (const lineItem of purchase.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId).session(session);
+                        const itemDoc = delDNItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
-                            await Product.findByIdAndUpdate(
-                                itemDoc.product,
-                                { $inc: { 'currentQuantity': Number(lineItem.quantity) } },
-                                { session }
-                            );
+                            const productId = itemDoc.product.toString();
+                            delDNProductUpdates[productId] = (delDNProductUpdates[productId] || 0) + Number(lineItem.quantity);
                         }
                     }
+                }
+                for (const [productId, change] of Object.entries(delDNProductUpdates)) {
+                    await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } }, { session });
                 }
             }
 
@@ -402,22 +433,22 @@ exports.deletePurchase = async (req, res) => {
         } else if (purchase.isBill) {
             // 1. Revert Stock
             if (purchase.items && purchase.items.length > 0) {
+                const delBillItemIds = purchase.items.filter(i => i.itemId).map(i => i.itemId);
+                const delBillItemsMap = await batchGetItems(delBillItemIds, session);
+                const delBillProductUpdates = {};
                 for (const lineItem of purchase.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId).session(session);
+                        const itemDoc = delBillItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
                             const qty = Number(lineItem.quantity);
-                            // Original Action: Bill -> Inc Stock, Return -> Dec Stock
-                            // Revert Action: Bill -> Dec Stock, Return -> Inc Stock
                             const change = purchase.isReturn ? qty : -qty;
-
-                            await Product.findByIdAndUpdate(
-                                itemDoc.product,
-                                { $inc: { 'currentQuantity': change } },
-                                { session }
-                            );
+                            const productId = itemDoc.product.toString();
+                            delBillProductUpdates[productId] = (delBillProductUpdates[productId] || 0) + change;
                         }
                     }
+                }
+                for (const [productId, change] of Object.entries(delBillProductUpdates)) {
+                    await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } }, { session });
                 }
             }
 
@@ -479,14 +510,7 @@ exports.convertToBill = async (req, res) => {
         if (req.body.billNumber) {
             billData.billNumber = req.body.billNumber;
         } else {
-            const lastBill = await Purchase.findOne({ companyId: po.companyId, isBill: true }).sort({ createdAt: -1 }).session(session);
-            let nextNum = 1;
-            if (lastBill && lastBill.billNumber) {
-                const parts = lastBill.billNumber.split('-');
-                const lastNum = parseInt(parts[parts.length - 1]);
-                if (!isNaN(lastNum)) nextNum = lastNum + 1;
-            }
-            billData.billNumber = `${nextNum}`;
+            billData.billNumber = `${await getNextNumber(Purchase, po.companyId, 'billNumber', { isBill: true })}`;
         }
         billData.billDate = new Date();
         billData.orderNumber = po.orderNumber; // Keep reference
@@ -499,19 +523,21 @@ exports.convertToBill = async (req, res) => {
         await po.save({ session });
 
         // Apply Stock/Accounting effects for the new Bill
-        // (Reusing logic logic or calling internal helper)
         if (bill.items && bill.items.length > 0) {
+            const convItemIds = bill.items.filter(i => i.itemId).map(i => i.itemId);
+            const convItemsMap = await batchGetItems(convItemIds, session);
+            const convProductUpdates = {};
             for (const lineItem of bill.items) {
                 if (lineItem.itemId) {
-                    const itemDoc = await Item.findById(lineItem.itemId).session(session);
+                    const itemDoc = convItemsMap.get(lineItem.itemId.toString());
                     if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
-                        await Product.findByIdAndUpdate(
-                            itemDoc.product,
-                            { $inc: { 'currentQuantity': Number(lineItem.quantity) } },
-                            { session }
-                        );
+                        const productId = itemDoc.product.toString();
+                        convProductUpdates[productId] = (convProductUpdates[productId] || 0) + Number(lineItem.quantity);
                     }
                 }
+            }
+            for (const [productId, change] of Object.entries(convProductUpdates)) {
+                await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } }, { session });
             }
         }
 
@@ -579,19 +605,20 @@ exports.processReturn = async (req, res) => {
         // --- EFFECT LOGIC For Return ---
         // 1. Stock: Decrease (Sending items back)
         if (returnPurchase.items && returnPurchase.items.length > 0) {
+            const retItemIds = returnPurchase.items.filter(i => i.itemId).map(i => i.itemId);
+            const retItemsMap = await batchGetItems(retItemIds, session);
+            const retProductUpdates = {};
             for (const lineItem of returnPurchase.items) {
                 if (lineItem.itemId) {
-                    const itemDoc = await Item.findById(lineItem.itemId).session(session);
+                    const itemDoc = retItemsMap.get(lineItem.itemId.toString());
                     if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
-                        const qty = Number(lineItem.quantity);
-                        // Return -> Decrease Stock
-                        await Product.findByIdAndUpdate(
-                            itemDoc.product,
-                            { $inc: { 'currentQuantity': -qty } },
-                            { session }
-                        );
+                        const productId = itemDoc.product.toString();
+                        retProductUpdates[productId] = (retProductUpdates[productId] || 0) - Number(lineItem.quantity);
                     }
                 }
+            }
+            for (const [productId, change] of Object.entries(retProductUpdates)) {
+                await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } }, { session });
             }
         }
 
@@ -641,17 +668,20 @@ exports.cancelPurchase = async (req, res) => {
         // --- REVERT EFFECTS (If it was a BILL, RETURN, or DEBIT NOTE) ---
         if (isDebitNote) {
             if (purchase.items && purchase.items.length > 0) {
+                const cancelDNItemIds = purchase.items.filter(i => i.itemId).map(i => i.itemId);
+                const cancelDNItemsMap = await batchGetItems(cancelDNItemIds, session);
+                const cancelDNProductUpdates = {};
                 for (const lineItem of purchase.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId).session(session);
+                        const itemDoc = cancelDNItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
-                            await Product.findByIdAndUpdate(
-                                itemDoc.product,
-                                { $inc: { 'currentQuantity': Number(lineItem.quantity) } },
-                                { session }
-                            );
+                            const productId = itemDoc.product.toString();
+                            cancelDNProductUpdates[productId] = (cancelDNProductUpdates[productId] || 0) + Number(lineItem.quantity);
                         }
                     }
+                }
+                for (const [productId, change] of Object.entries(cancelDNProductUpdates)) {
+                    await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } }, { session });
                 }
             }
 
@@ -666,20 +696,22 @@ exports.cancelPurchase = async (req, res) => {
             // 1. Revert Stock — FA and EXPENSE never affected stock on create, so skip them
             const affectsStock = purchase.documentType !== 'FA' && purchase.documentType !== 'EXPENSE';
             if (affectsStock && purchase.items && purchase.items.length > 0) {
+                const cancelBillItemIds = purchase.items.filter(i => i.itemId).map(i => i.itemId);
+                const cancelBillItemsMap = await batchGetItems(cancelBillItemIds, session);
+                const cancelBillProductUpdates = {};
                 for (const lineItem of purchase.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId).session(session);
+                        const itemDoc = cancelBillItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
                             const qty = Number(lineItem.quantity);
                             const change = purchase.isReturn ? qty : -qty;
-
-                            await Product.findByIdAndUpdate(
-                                itemDoc.product,
-                                { $inc: { 'currentQuantity': change } },
-                                { session }
-                            );
+                            const productId = itemDoc.product.toString();
+                            cancelBillProductUpdates[productId] = (cancelBillProductUpdates[productId] || 0) + change;
                         }
                     }
+                }
+                for (const [productId, change] of Object.entries(cancelBillProductUpdates)) {
+                    await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } }, { session });
                 }
             }
 

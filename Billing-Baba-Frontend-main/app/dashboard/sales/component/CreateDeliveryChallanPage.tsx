@@ -53,7 +53,7 @@ import {
 } from "@/components/ui/command";
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { fetchParties, fetchItems, createSale } from '@/lib/api';
+import { fetchParties, fetchItems, createSale, updateSale } from '@/lib/api';
 import AddItemModal from '../../items/component/AddItemModal';
 import { EditPartyModal } from '@/components/dashboard/party/EditPartyModal';
 import { toast } from '@/components/ui/use-toast';
@@ -78,16 +78,13 @@ type Item = {
     tax: string;
 };
 
-export default function CreateDeliveryChallanPage({ onCancel }: { onCancel: () => void }) {
-    const isCancelled = false;
-    const [invoiceDate, setInvoiceDate] = useState<Date | undefined>(new Date());
-    const [dueDate, setDueDate] = useState<Date | undefined>(new Date());
-    const [challanNo, setChallanNo] = useState("1");
-    const [
-        godown,
-        setGodown
-    ] = useState("Main Godown");
-    const [selectedState, setSelectedState] = useState("");
+export default function CreateDeliveryChallanPage({ onCancel, initialData }: { onCancel: () => void; initialData?: any }) {
+    const isCancelled = initialData?.status === 'Cancelled';
+    const [invoiceDate, setInvoiceDate] = useState<Date | undefined>(initialData?.challanDate ? new Date(initialData.challanDate) : new Date());
+    const [dueDate, setDueDate] = useState<Date | undefined>(initialData?.dueDate ? new Date(initialData.dueDate) : new Date());
+    const [challanNo, setChallanNo] = useState(initialData?.challanNumber || "1");
+    const [godown, setGodown] = useState(initialData?.godown || "Main Godown");
+    const [selectedState, setSelectedState] = useState(initialData?.stateOfSupply || "");
 
     // Data State
     const [parties, setParties] = useState<any[]>([]);
@@ -95,11 +92,23 @@ export default function CreateDeliveryChallanPage({ onCancel }: { onCancel: () =
 
     // Party Search
     const [partyOpen, setPartyOpen] = useState(false);
-    const [selectedPartyId, setSelectedPartyId] = useState("");
+    const [selectedPartyId, setSelectedPartyId] = useState(initialData?.partyId?._id || initialData?.partyId || "");
     const [partySearch, setPartySearch] = useState("");
 
     // Form State
-    const [items, setItems] = useState<Item[]>([{ id: 1, name: '', qty: 0, unit: 'NONE', price: 0, tax: 'NONE' }]);
+    const [items, setItems] = useState<Item[]>(
+        initialData?.items?.length
+            ? initialData.items.map((i: any, idx: number) => ({
+                id: idx + 1,
+                itemId: i.itemId,
+                name: i.name,
+                qty: i.quantity || 0,
+                unit: i.unit || 'NONE',
+                price: i.priceUnit?.amount || 0,
+                tax: i.tax?.rate ? `GST@${i.tax.rate}%` : 'NONE',
+            }))
+            : [{ id: 1, name: '', qty: 0, unit: 'NONE', price: 0, tax: 'NONE' }]
+    );
     const [activeSearchIndex, setActiveSearchIndex] = useState<number | null>(null);
     const [dropdownCoords, setDropdownCoords] = useState<{ top: number; left: number } | null>(null);
     const tableWrapperRef = React.useRef<HTMLDivElement>(null);
@@ -268,12 +277,17 @@ export default function CreateDeliveryChallanPage({ onCancel }: { onCancel: () =
         };
 
         try {
-            await createSale(payload);
-            toast({ title: "Delivery Challan Created Successfully!", className: "bg-green-500 text-white" });
+            if (initialData?._id) {
+                await updateSale(initialData._id, payload);
+                toast({ title: "Delivery Challan Updated Successfully!", className: "bg-green-500 text-white" });
+            } else {
+                await createSale(payload);
+                toast({ title: "Delivery Challan Created Successfully!", className: "bg-green-500 text-white" });
+            }
             onCancel();
         } catch (error) {
             console.error(error);
-            toast({ title: "Failed to create challan", variant: "destructive" });
+            toast({ title: "Failed to save challan", variant: "destructive" });
         }
     };
 
@@ -349,7 +363,7 @@ export default function CreateDeliveryChallanPage({ onCancel }: { onCancel: () =
                         </div>
                         <div className="flex items-center justify-end">
                             <label className="text-sm text-gray-500 w-32">Challan No.</label>
-                            <Input value={challanNo} onChange={e => setChallanNo(e.target.value)} className="w-48 bg-gray-50" />
+                            <Input value={challanNo} onChange={e => setChallanNo(e.target.value)} placeholder="Auto" className="w-48 bg-gray-50" />
                         </div>
                         <div className="flex items-center justify-end">
                             <label className="text-sm text-gray-500 w-32">Invoice Date</label>

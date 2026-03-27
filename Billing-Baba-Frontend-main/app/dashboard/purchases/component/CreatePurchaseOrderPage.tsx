@@ -414,6 +414,7 @@ export default function CreatePurchaseOrderPage({ onCancel, initialData }: { onC
                             <Input
                                 value={orderNumber}
                                 onChange={(e) => setOrderNumber(e.target.value)}
+                                placeholder="Auto"
                                 className="w-48 bg-gray-50"
                             />
                         </div>

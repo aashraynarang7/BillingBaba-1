@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { MoreVertical, Printer, Edit, Trash2, Eye, Clock, ChevronDown, MessageCircle } from 'lucide-react';
+import { useState } from 'react';
+import { MoreVertical, Printer, Edit, Trash2, Eye, Clock, ChevronDown } from 'lucide-react';
 import { Transaction } from '@/lib/types';
 import { SharePopover } from '@/components/dashboard/SharePopover';
-import { getWhatsAppStatus, sendWhatsAppMessage } from '@/lib/api';
 
 // Shadcn UI Components
 import { Button } from "@/components/ui/button";
@@ -31,12 +30,15 @@ import {
 import { FileText } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 
+const CANCELLABLE_TYPES = new Set(['Sale', 'Sale Invoice', 'Purchase', 'Purchase Bill']);
+
 interface TransactionTableRowProps {
     transaction: Transaction;
     onConvert?: (id: string) => void;
     onConvertToOrder?: (id: string) => void;
     onEdit?: (id: string) => void;
     onDelete?: (id: string) => void;
+    onCancel?: (id: string) => void;
     onView?: (id: string) => void;
     onPrint?: (id: string) => void;
     onDuplicate?: (id: string) => void;
@@ -45,46 +47,8 @@ interface TransactionTableRowProps {
     onMakePayment?: (partyId: string, amount: number, invoiceId?: string) => void;
 }
 
-const TransactionTableRow = ({ transaction, onConvert, onConvertToOrder, onConvertToReturn, onDuplicate, onEdit, onDelete, onView, onPrint, onReceivePayment, onMakePayment }: TransactionTableRowProps) => {
+const TransactionTableRow = ({ transaction, onConvert, onConvertToOrder, onConvertToReturn, onDuplicate, onEdit, onDelete, onCancel, onView, onPrint, onReceivePayment, onMakePayment }: TransactionTableRowProps) => {
     const [isPaymentHistoryOpen, setIsPaymentHistoryOpen] = useState(false);
-    const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
-    const [whatsAppMessage, setWhatsAppMessage] = useState('');
-    const [isSendingWA, setIsSendingWA] = useState(false);
-    const [waConnected, setWaConnected] = useState(false);
-
-    useEffect(() => {
-        getWhatsAppStatus().then(s => setWaConnected(s.status === 'CONNECTED')).catch(() => {});
-    }, [isWhatsAppOpen]);
-
-    const openWhatsApp = () => {
-        const companyName = typeof window !== 'undefined' ? (localStorage.getItem('activeCompanyName') || 'BillingBaba') : 'BillingBaba';
-        const msg = `Dear Customer,\nThis is a gentle reminder regarding your payment of ${transaction.balance.toLocaleString('en-IN')} pending with us.\nIf you have already made the payment, kindly ignore this message.\n-\nThank You,\n${companyName}`;
-        setWhatsAppMessage(msg);
-        setIsWhatsAppOpen(true);
-    };
-
-    const sendWhatsApp = async () => {
-        const phone = (transaction as any).phone || '';
-        if (waConnected && phone) {
-            setIsSendingWA(true);
-            try {
-                await sendWhatsAppMessage(phone, whatsAppMessage);
-                toast({ title: 'WhatsApp message sent!', className: 'bg-green-600 text-white' });
-                setIsWhatsAppOpen(false);
-            } catch (e: any) {
-                toast({ title: e.message || 'Failed to send message', variant: 'destructive' });
-            } finally {
-                setIsSendingWA(false);
-            }
-        } else {
-            // Fallback: open wa.me link
-            const cleaned = phone.replace(/\D/g, '');
-            const intlPhone = cleaned.startsWith('91') ? cleaned : cleaned ? `91${cleaned}` : '';
-            const url = `https://wa.me/${intlPhone}?text=${encodeURIComponent(whatsAppMessage)}`;
-            window.open(url, '_blank');
-            setIsWhatsAppOpen(false);
-        }
-    };
 
     return (
         <>
@@ -187,19 +151,11 @@ const TransactionTableRow = ({ transaction, onConvert, onConvertToOrder, onConve
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-56">
-                                {(transaction.transactionType === 'Estimate/Quotation' || transaction.transactionType === 'Proforma Invoice' || transaction.transactionType === 'Sale Order') ? (
+                                {(transaction.transactionType === 'Estimate/Quotation' || transaction.transactionType === 'Proforma Invoice' || transaction.transactionType === 'Sale Order' || transaction.transactionType === 'Purchase Order') ? (
                                     <>
                                         {(onEdit || onView) && (
                                             <DropdownMenuItem onClick={() => onEdit ? onEdit(String(transaction.id)) : onView?.(String(transaction.id))}>
                                                 <span className="text-[15px] py-1 text-slate-700">View/Edit</span>
-                                            </DropdownMenuItem>
-                                        )}
-                                        {onDelete && transaction.status !== 'Cancelled' && (
-                                            <DropdownMenuItem
-                                                className="focus:bg-slate-50"
-                                                onClick={() => onDelete(String(transaction.id))}
-                                            >
-                                                <span className="text-[15px] py-1 text-slate-700">Delete</span>
                                             </DropdownMenuItem>
                                         )}
                                         <DropdownMenuItem onClick={() => onDuplicate ? onDuplicate(String(transaction.id)) : toast({ title: "Duplicate coming soon!" })}>
@@ -214,6 +170,15 @@ const TransactionTableRow = ({ transaction, onConvert, onConvertToOrder, onConve
                                         <DropdownMenuItem onClick={() => onPrint && onPrint(String(transaction.id))}>
                                             <span className="text-[15px] py-1 text-slate-700">Print</span>
                                         </DropdownMenuItem>
+                                        {onDelete && (
+                                            <DropdownMenuItem
+                                                className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                                                onClick={() => onDelete(String(transaction.id))}
+                                            >
+                                                <Trash2 className="mr-2 h-4 w-4" />
+                                                <span>Delete</span>
+                                            </DropdownMenuItem>
+                                        )}
                                     </>
                                 ) : (
                                     <>
@@ -228,22 +193,8 @@ const TransactionTableRow = ({ transaction, onConvert, onConvertToOrder, onConve
                                             </DropdownMenuItem>
                                         )}
 
-                                        {/* Print */}
-                                        {onPrint && (
-                                            <DropdownMenuItem onClick={() => onPrint(String(transaction.id))}>
-                                                <Printer className="mr-2 h-4 w-4" />
-                                                <span>Print</span>
-                                            </DropdownMenuItem>
-                                        )}
-
                                         {transaction.status !== 'Cancelled' && (
                                             <>
-                                                {/* Generate e-Invoice (Placeholder) */}
-                                                <DropdownMenuItem disabled>
-                                                    <FileText className="mr-2 h-4 w-4" />
-                                                    <span>Generate e-Invoice</span>
-                                                </DropdownMenuItem>
-
                                                 {/* Payment Action */}
                                                 {(transaction.transactionType?.includes('Purchase') ? (onMakePayment && transaction.balance > 0 && transaction.partyId) : (onReceivePayment && transaction.balance > 0 && transaction.partyId)) && (
                                                     <DropdownMenuItem onClick={() => {
@@ -255,14 +206,6 @@ const TransactionTableRow = ({ transaction, onConvert, onConvertToOrder, onConve
                                                     }}>
                                                         <span className="mr-2 h-4 w-4 text-center font-bold">₹</span>
                                                         <span className="font-medium text-slate-800">{transaction.transactionType?.includes('Purchase') ? 'Make Payment' : 'Receive Payment'}</span>
-                                                    </DropdownMenuItem>
-                                                )}
-
-                                                {/* Send WhatsApp */}
-                                                {!transaction.transactionType?.includes('Purchase') && (
-                                                    <DropdownMenuItem onClick={openWhatsApp}>
-                                                        <MessageCircle className="mr-2 h-4 w-4 text-green-600" />
-                                                        <span className="text-green-700 font-medium">Send WhatsApp</span>
                                                     </DropdownMenuItem>
                                                 )}
 
@@ -278,21 +221,25 @@ const TransactionTableRow = ({ transaction, onConvert, onConvertToOrder, onConve
                                                     </DropdownMenuItem>
                                                 )}
 
-                                                {/* Delivery Challan Preview (Sales only) */}
-                                                {!transaction.transactionType?.includes('Purchase') && (
-                                                    <DropdownMenuItem onClick={() => toast({ title: "Challan preview coming soon!" })}>
-                                                        <Eye className="mr-2 h-4 w-4" />
-                                                        <span>Preview Delivery Challan</span>
-                                                    </DropdownMenuItem>
-                                                )}
                                             </>
                                         )}
 
-                                        {/* Cancel (formerly Delete) */}
-                                        {onDelete && transaction.status !== 'Cancelled' && (
+                                        {/* Delete */}
+                                        {onDelete && (
                                             <DropdownMenuItem
                                                 className="text-red-600 focus:text-red-600 focus:bg-red-50"
                                                 onClick={() => onDelete(String(transaction.id))}
+                                            >
+                                                <Trash2 className="mr-2 h-4 w-4" />
+                                                <span>Delete</span>
+                                            </DropdownMenuItem>
+                                        )}
+
+                                        {/* Cancel */}
+                                        {onCancel && CANCELLABLE_TYPES.has(transaction.transactionType || '') && transaction.status !== 'Cancelled' && (
+                                            <DropdownMenuItem
+                                                className="text-orange-600 focus:text-orange-600 focus:bg-orange-50"
+                                                onClick={() => onCancel(String(transaction.id))}
                                             >
                                                 <span className="mr-2 h-4 w-4">🚫</span>
                                                 <span>Cancel</span>
@@ -306,20 +253,6 @@ const TransactionTableRow = ({ transaction, onConvert, onConvertToOrder, onConve
                                         </DropdownMenuItem>
 
                                         <DropdownMenuSeparator />
-
-                                        {/* Share/Print Options */}
-                                        <DropdownMenuItem onClick={() => toast({ title: "PDF Open coming soon!" })}>
-                                            <FileText className="mr-2 h-4 w-4" />
-                                            <span>Open PDF</span>
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem onClick={() => onView && onView(String(transaction.id))}>
-                                            <Eye className="mr-2 h-4 w-4" />
-                                            <span>Preview</span>
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem onClick={() => onPrint && onPrint(String(transaction.id))}>
-                                            <Printer className="mr-2 h-4 w-4" />
-                                            <span>Print</span>
-                                        </DropdownMenuItem>
 
                                         {/* View/Payment History */}
                                         {transaction.transactionType === 'Sale' ? (
@@ -340,51 +273,6 @@ const TransactionTableRow = ({ transaction, onConvert, onConvertToOrder, onConve
                     </div>
                 </TableCell>
             </TableRow>
-
-            {/* WhatsApp Message Dialog */}
-            <Dialog open={isWhatsAppOpen} onOpenChange={setIsWhatsAppOpen}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-green-700 border-b pb-4">
-                            <MessageCircle className="h-5 w-5" /> Send WhatsApp Message
-                        </DialogTitle>
-                    </DialogHeader>
-                    <div className="py-2 flex flex-col gap-3">
-                        {waConnected ? (
-                            <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2 flex items-center gap-1.5">
-                                <MessageCircle size={13} /> WhatsApp connected — message will be sent directly.
-                            </p>
-                        ) : (
-                            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                                WhatsApp not connected. Will open wa.me link instead.
-                            </p>
-                        )}
-                        {(transaction as any).phone && (
-                            <p className="text-xs text-gray-500">To: <span className="font-semibold text-gray-800">{(transaction as any).phone}</span></p>
-                        )}
-                        <textarea
-                            className="w-full border border-gray-300 rounded-md p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-green-400"
-                            rows={7}
-                            value={whatsAppMessage}
-                            onChange={e => setWhatsAppMessage(e.target.value)}
-                        />
-                    </div>
-                    <DialogFooter className="border-t pt-3 gap-2 sm:justify-end">
-                        <DialogClose asChild>
-                            <Button variant="outline" size="sm">Cancel</Button>
-                        </DialogClose>
-                        <Button
-                            size="sm"
-                            className="bg-green-600 hover:bg-green-700 text-white gap-2"
-                            onClick={sendWhatsApp}
-                            disabled={isSendingWA}
-                        >
-                            {isSendingWA ? <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <MessageCircle className="h-4 w-4" />}
-                            {waConnected ? 'Send Message' : 'Open in WhatsApp'}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
 
             <Dialog open={isPaymentHistoryOpen} onOpenChange={setIsPaymentHistoryOpen}>
                 <DialogContent className="sm:max-w-md">

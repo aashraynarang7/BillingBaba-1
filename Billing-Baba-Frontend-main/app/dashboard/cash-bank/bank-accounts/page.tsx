@@ -3,8 +3,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Building2, Printer, QrCode, MoreHorizontal, ChevronDown, Search, Filter, ArrowRightLeft } from 'lucide-react'
-import AddBankAccountModal from '@/components/dashboard/AddBankAccountModal'
-import BankToBankTransferModal from '@/components/dashboard/BankToBankTransferModal'
+import dynamic from 'next/dynamic';
+const AddBankAccountModal = dynamic(() => import('@/components/dashboard/AddBankAccountModal'), { ssr: false });
+const BankToBankTransferModal = dynamic(() => import('@/components/dashboard/BankToBankTransferModal'), { ssr: false });
 import { fetchBankAccounts, fetchBankTransactions } from '@/lib/api'
 import { format } from 'date-fns'
 

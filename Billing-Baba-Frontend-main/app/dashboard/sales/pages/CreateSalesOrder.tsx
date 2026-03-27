@@ -400,6 +400,7 @@ export default function CreateSaleOrderPage({ onCancel, initialData }: { onCance
                             <Input
                                 value={orderNumber}
                                 onChange={(e) => setOrderNumber(e.target.value)}
+                                placeholder="Auto"
                                 className="w-48 bg-gray-50"
                             />
                         </div>
@@ -703,8 +704,8 @@ export default function CreateSaleOrderPage({ onCancel, initialData }: { onCance
                                 type="number"
                                 placeholder="0"
                                 className="w-48"
-                                value={advanceAmount}
-                                onChange={(e) => setAdvanceAmount(Number(e.target.value))}
+                                value={advanceAmount || ''}
+                                onChange={(e) => setAdvanceAmount(e.target.value === '' ? 0 : Number(e.target.value))}
                             />
                         </div>
                         <div className="flex items-center justify-end gap-4">

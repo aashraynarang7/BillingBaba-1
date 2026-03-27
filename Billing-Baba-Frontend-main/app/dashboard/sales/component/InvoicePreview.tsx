@@ -2,13 +2,25 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { X, Printer, Download, Share2, MessageSquare, Mail, CreditCard, Landmark, Smartphone } from 'lucide-react';
+import { X, Printer, Download, MessageSquare, Mail, Landmark } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { fetchCompanies, fetchBankAccounts } from '@/lib/api';
-import { format } from 'date-fns';
+import { format, parse } from 'date-fns';
+
+/** Safely parse a date value that may be an ISO string, a dd/MM/yyyy string, or already a Date */
+const safeDate = (val: any): Date => {
+    if (!val) return new Date();
+    if (val instanceof Date && !isNaN(val.getTime())) return val;
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) return d;
+    // Try dd/MM/yyyy
+    try { const p = parse(String(val), 'dd/MM/yyyy', new Date()); if (!isNaN(p.getTime())) return p; } catch {}
+    // Try dd-MM-yyyy
+    try { const p = parse(String(val), 'dd-MM-yyyy', new Date()); if (!isNaN(p.getTime())) return p; } catch {}
+    return new Date();
+};
 
 // Types
 interface InvoicePreviewProps {
@@ -19,6 +31,7 @@ interface InvoicePreviewProps {
 }
 
 const classicThemes = [
+    { id: 'default', name: 'Default' },
     { id: 'tally', name: 'Tally Theme' },
     { id: 'gst1', name: 'GST Theme 1' },
     { id: 'gst3', name: 'GST Theme 3' },
@@ -64,11 +77,10 @@ const DOC_TITLES: Record<string, string> = {
 export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: InvoicePreviewProps) => {
     const componentRef = useRef<HTMLDivElement>(null);
     const docTitle = DOC_TITLES[type] || 'Tax Invoice';
-    const [activeTheme, setActiveTheme] = useState('tally');
+    const [activeTheme, setActiveTheme] = useState('default');
     const [classicOpen, setClassicOpen] = useState(true);
     const [vintageOpen, setVintageOpen] = useState(false);
     const [themeColor, setThemeColor] = useState('#0ea5e9');
-    const [showPreviewAgain, setShowPreviewAgain] = useState(true);
     const [company, setCompany] = useState<any>(data?.company || null);
     const [bankAccount, setBankAccount] = useState<any>(null);
 
@@ -232,14 +244,81 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
         }
     };
 
-    // --- Mock Share Handlers ---
-    const handleWhatsappShare = () => {
-        const text = `Here is your ${type}: ${data.invoiceNo}. Total Amount: ${data.grandTotal}`;
-        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    // --- Share Handlers ---
+    const [isSharing, setIsSharing] = useState(false);
+
+    const getShareFileName = () => `${docTitle.replace(/\s+/g, '_')}_${data.invoiceNo || data.refNo || 'Document'}.pdf`;
+
+    const handleWhatsappShare = async () => {
+        // Resolve party phone — auto-pick from data or prompt user
+        let phone = (data.phone || '').replace(/\D/g, '');
+        if (!phone) {
+            const input = window.prompt('No phone number found for this party.\nEnter WhatsApp number (with country code, e.g. 919876543210):');
+            if (!input) return; // user cancelled
+            phone = input.replace(/\D/g, '');
+            if (!phone) return;
+        }
+        // Normalize: prepend 91 for 10-digit Indian numbers
+        if (phone.length === 10) phone = '91' + phone;
+
+        setIsSharing(true);
+        try {
+            const pdf = await generatePdf();
+            if (!pdf) throw new Error('Failed to generate PDF');
+
+            // Download the PDF so user can attach it
+            pdf.save(getShareFileName());
+
+            // Build WhatsApp message
+            const text = [
+                `*${docTitle}*`,
+                `No: ${data.invoiceNo || data.refNo || '—'}`,
+                `Party: ${data.partyName || '—'}`,
+                `Date: ${data.invoiceDate || '—'}`,
+                `Amount: ₹${data.grandTotal?.toLocaleString('en-IN') || '0'}`,
+                data.balance !== undefined ? `Balance: ₹${(data.balance ?? data.grandTotal)?.toLocaleString('en-IN')}` : '',
+                '',
+                '_PDF downloaded — please attach it to the chat_',
+            ].filter(Boolean).join('\n');
+
+            window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
+        } catch (err: any) {
+            console.error('WhatsApp share failed', err);
+        } finally {
+            setIsSharing(false);
+        }
     };
 
-    const handleEmailShare = () => {
-        window.open(`mailto:?subject=${type} - ${data.invoiceNo}&body=Please find attached...`, '_blank');
+    const handleEmailShare = async () => {
+        setIsSharing(true);
+        try {
+            const pdf = await generatePdf();
+            if (!pdf) throw new Error('Failed to generate PDF');
+
+            // Download the PDF so user can attach it
+            pdf.save(getShareFileName());
+
+            const subject = `${docTitle} ${data.invoiceNo || ''} - ${data.partyName || ''}`;
+            const body = [
+                `Dear ${data.partyName || 'Sir/Madam'},`,
+                '',
+                `Please find attached ${docTitle} details:`,
+                `${docTitle} No: ${data.invoiceNo || data.refNo || '—'}`,
+                `Date: ${data.invoiceDate || '—'}`,
+                `Total Amount: ₹${data.grandTotal?.toLocaleString('en-IN') || '0'}`,
+                '',
+                'Please attach the downloaded PDF to this email.',
+                '',
+                'Regards,',
+                data.companyName || company?.name || '',
+            ].join('\n');
+
+            window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
+        } catch (err: any) {
+            console.error('Email share failed', err);
+        } finally {
+            setIsSharing(false);
+        }
     };
 
     // --- Template Renders ---
@@ -278,7 +357,7 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
                         </div>
                         <div className="flex justify-between items-center">
                             <span className="font-semibold">Date:</span>
-                            <span>{data.invoiceDate ? new Date(data.invoiceDate).toLocaleDateString() : format(new Date(), 'dd/MM/yyyy')}</span>
+                            <span>{data.invoiceDate ? safeDate(data.invoiceDate).toLocaleDateString() : format(new Date(), 'dd/MM/yyyy')}</span>
                         </div>
                         <div className="flex justify-between items-center">
                             <span className="font-semibold">Time:</span>
@@ -482,8 +561,8 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
                     {data.billingAddress && <p className="text-gray-600">{data.billingAddress}</p>}
                 </div>
                 <div className="border p-4 rounded-md w-[48%] bg-white/50 text-right">
-                    <p><span className="font-semibold">{type} Date:</span> {data.invoiceDate ? new Date(data.invoiceDate).toLocaleDateString() : '-'}</p>
-                    {data.dueDate && <p><span className="font-semibold">Due Date:</span> {new Date(data.dueDate).toLocaleDateString()}</p>}
+                    <p><span className="font-semibold">{type} Date:</span> {data.invoiceDate ? safeDate(data.invoiceDate).toLocaleDateString() : '-'}</p>
+                    {data.dueDate && <p><span className="font-semibold">Due Date:</span> {safeDate(data.dueDate).toLocaleDateString()}</p>}
                     <p><span className="font-semibold">Place of Supply:</span> {data.stateOfSupply || '-'}</p>
                 </div>
             </div>
@@ -612,7 +691,7 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
                                 <span>{data.refNo || data.invoiceNo || "9876"}</span>
 
                                 <span className="font-semibold">Date:</span>
-                                <span>{data.invoiceDate ? new Date(data.invoiceDate).toLocaleDateString() : format(new Date(), 'dd/MM/yyyy')}</span>
+                                <span>{data.invoiceDate ? safeDate(data.invoiceDate).toLocaleDateString() : format(new Date(), 'dd/MM/yyyy')}</span>
 
                                 <span className="font-semibold">Time:</span>
                                 <span>{data.invoiceTime || "04:17 PM"}</span>
@@ -820,7 +899,7 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
         const totalAmt = (data.items || []).reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0);
         const subTotal = data.subTotal ?? totalAmt;
         const grandTotal = data.grandTotal ?? totalAmt;
-        const received = data.received || 0;
+        const received = data.received ?? data.receivedAmount ?? data.paidAmount ?? 0;
         const cgst = (data.totalTax || totalGst) / 2;
         const sgst = (data.totalTax || totalGst) / 2;
 
@@ -857,7 +936,7 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
                         <div className="font-semibold text-[9px] text-gray-500 mb-1">Invoice Details</div>
                         <div className="grid grid-cols-[auto_1fr] gap-x-2 text-[9px]">
                             <span>Invoice No. :</span><span className="font-semibold">{data.invoiceNo || data.refNo || '—'}</span>
-                            <span>Date :</span><span>{data.invoiceDate ? format(new Date(data.invoiceDate), 'dd-MM-yyyy') : format(new Date(), 'dd-MM-yyyy')}</span>
+                            <span>Date :</span><span>{data.invoiceDate ? format(safeDate(data.invoiceDate), 'dd-MM-yyyy') : format(new Date(), 'dd-MM-yyyy')}</span>
                             <span>Time :</span><span>{data.invoiceTime || format(new Date(), 'hh:mm a')}</span>
                             {stateOfSupply && <><span>Place of supply:</span><span>{stateOfSupply}</span></>}
                         </div>
@@ -979,6 +1058,213 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
         );
     };
 
+    // --- Default Portrait Theme (matches Quotation PDF layout) ---
+    const DefaultTemplate = () => {
+        const items = data.items || [];
+        const totalAmt = items.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0);
+        const subTotal = data.subTotal ?? totalAmt;
+        const grandTotal = data.grandTotal ?? totalAmt;
+        const totalTax = data.totalTax || 0;
+        const totalWithTax = subTotal + totalTax;
+        const received = data.received ?? data.receivedAmount ?? data.paidAmount ?? 0;
+        const balance = grandTotal - received;
+        const companyName = company?.name || data.companyName || 'Your Firm Name';
+        const companyAddress = company?.address || data.companyAddress || '';
+        const companyPhone = company?.phone || data.companyPhone || '';
+        const companyEmail = company?.email || data.companyEmail || '';
+        const companyGst = company?.gstNumber || data.companyGst || '';
+
+        const invoiceNo = data.invoiceNo || data.refNo || data.orderNumber || data.challanNumber || '—';
+        const invoiceDate = data.invoiceDate ? format(safeDate(data.invoiceDate), 'dd-MM-yyyy') : format(new Date(), 'dd-MM-yyyy');
+        const dueDate = data.dueDate ? format(safeDate(data.dueDate), 'dd-MM-yyyy') : '';
+
+        return (
+            <div className="w-full font-serif text-[11px] text-gray-900 bg-white border border-gray-400 flex flex-col" style={{ minHeight: 'calc(297mm - 24mm)' }}>
+
+                {/* ===== ROW 1: Company Info (left) | Document Type Box (right) ===== */}
+                <div className="flex border-b border-gray-400">
+                    {/* Company Info */}
+                    <div className="flex-1 p-4 flex items-start gap-3">
+                        <div className="w-14 h-14 bg-gray-50 border border-gray-300 flex items-center justify-center text-gray-400 font-bold text-[8px] shrink-0 rounded leading-tight text-center">
+                            YOUR<br/>LOGO
+                        </div>
+                        <div>
+                            <div className="font-bold text-base leading-tight">{companyName}</div>
+                            {companyAddress && <div className="text-[10px] text-gray-700 mt-0.5"><span className="font-semibold">Address:</span> {companyAddress}</div>}
+                            {companyPhone && <div className="text-[10px] text-gray-700"><span className="font-semibold">Mob.:</span> {companyPhone}</div>}
+                            {companyEmail && <div className="text-[10px] text-gray-700"><span className="font-semibold">Email:</span> {companyEmail}</div>}
+                            {companyGst && <div className="text-[10px] text-gray-700"><span className="font-semibold">GSTIN:</span> {companyGst}</div>}
+                        </div>
+                    </div>
+                    {/* Document Type Table */}
+                    <div className="border-l border-gray-400 w-[220px] flex flex-col">
+                        <div className="text-center font-bold text-[13px] py-2 border-b border-gray-400 bg-white">
+                            {docTitle}
+                        </div>
+                        <table className="w-full text-[10.5px] border-collapse">
+                            <tbody>
+                                <tr className="border-b border-gray-300">
+                                    <td className="px-2 py-1 border-r border-gray-300 text-gray-600 w-[50%]">{docTitle.split(' ')[0]} No.</td>
+                                    <td className="px-2 py-1 font-bold text-right">{invoiceNo}</td>
+                                </tr>
+                                <tr className="border-b border-gray-300">
+                                    <td className="px-2 py-1 border-r border-gray-300 text-gray-600">Date</td>
+                                    <td className="px-2 py-1 font-bold text-right">{invoiceDate}</td>
+                                </tr>
+                                {dueDate && (
+                                    <tr className="border-b border-gray-300">
+                                        <td className="px-2 py-1 border-r border-gray-300 text-gray-600">Valid Till</td>
+                                        <td className="px-2 py-1 font-bold text-right">{dueDate}</td>
+                                    </tr>
+                                )}
+                                {data.preparedBy && (
+                                    <tr>
+                                        <td className="px-2 py-1 border-r border-gray-300 text-gray-600">Prepared By</td>
+                                        <td className="px-2 py-1 font-bold text-right">{data.preparedBy}</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* ===== ROW 2: Party Details (left) | Bank Details (right) ===== */}
+                <div className="flex border-b border-gray-400">
+                    {/* Party Info */}
+                    <div className="flex-1 p-3 text-[10.5px] leading-relaxed">
+                        <div><span className="font-bold">To:</span> {data.partyName || '—'}</div>
+                        {data.billingAddress && <div><span className="font-bold">Address. :</span> {data.billingAddress}</div>}
+                        {data.phone && <div><span className="font-bold">Mob. :</span> {data.phone}</div>}
+                        <div><span className="font-bold">Email :</span> {data.partyEmail || ''}</div>
+                        <div><span className="font-bold">Reference :</span> {data.reference || ''}</div>
+                        <div><span className="font-bold">GSTIN :</span> {data.partyGst || ''}</div>
+                    </div>
+                    {/* Bank Details */}
+                    <div className="border-l border-gray-400 w-[280px] p-3 text-[10.5px] leading-relaxed">
+                        <div className="font-bold text-[11.5px] mb-1">Bank Details</div>
+                        <div><span className="font-bold">Acc Holder:</span> {bankAccount?.accountHolderName || '—'}</div>
+                        <div><span className="font-bold">Bank Name:</span> {bankAccount?.bankName || '—'}</div>
+                        {bankAccount?.branchName && <div><span className="font-bold">Branch Name:</span> {bankAccount.branchName}</div>}
+                        <div><span className="font-bold">IFSC Code:</span> {bankAccount?.ifscCode || '—'}</div>
+                        <div><span className="font-bold">Account Number:</span> {bankAccount?.accountNumber || '—'}</div>
+                    </div>
+                </div>
+
+                {/* ===== ITEMS TABLE (flex-grow to fill page) ===== */}
+                <div className="flex-1">
+                <table className="w-full border-collapse text-[10.5px]">
+                    <thead>
+                        <tr className="bg-gray-100">
+                            <th className="border-b border-r border-gray-400 px-2 py-2.5 text-center w-8 font-bold">SN</th>
+                            <th className="border-b border-r border-gray-400 px-2 py-2.5 text-center w-[60px] font-bold">Image</th>
+                            <th className="border-b border-r border-gray-400 px-2 py-2.5 text-center font-bold">Product</th>
+                            <th className="border-b border-r border-gray-400 px-2 py-2.5 text-center w-[65px] font-bold">Company</th>
+                            <th className="border-b border-r border-gray-400 px-2 py-2.5 text-center w-[75px] font-bold">SKU</th>
+                            <th className="border-b border-r border-gray-400 px-2 py-2.5 text-center w-[60px] font-bold">Qty</th>
+                            <th className="border-b border-r border-gray-400 px-2 py-2.5 text-center w-[65px] font-bold">Price</th>
+                            <th className="border-b border-r border-gray-400 px-2 py-2.5 text-center w-[65px] font-bold">Discount<br/>(%)</th>
+                            <th className="border-b border-gray-400 px-2 py-2.5 text-center w-[75px] font-bold">Final Price</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {items.map((item: any, idx: number) => {
+                            const price = Number(item.priceUnit?.amount || 0);
+                            const discPct = Number(item.discount?.percent || 0);
+                            const finalPrice = Number(item.amount || 0);
+                            return (
+                                <tr key={idx} className="border-b border-gray-300 align-middle">
+                                    <td className="border-r border-gray-300 px-2 py-3 text-center">{idx + 1}</td>
+                                    <td className="border-r border-gray-300 px-1 py-2 text-center">
+                                        {item.image ? (
+                                            <img src={item.image} alt="" className="w-12 h-12 object-contain mx-auto" crossOrigin="anonymous" />
+                                        ) : (
+                                            <div className="w-12 h-12 bg-gray-50 mx-auto" />
+                                        )}
+                                    </td>
+                                    <td className="border-r border-gray-300 px-2 py-2 text-center">
+                                        <div className="font-semibold">{item.name}</div>
+                                        {item.description && <div className="text-[9px] text-gray-500 mt-0.5">{item.description}</div>}
+                                    </td>
+                                    <td className="border-r border-gray-300 px-2 py-2 text-center text-[10px]">{item.company || item.brand || ''}</td>
+                                    <td className="border-r border-gray-300 px-2 py-2 text-center text-[10px]">{item.sku || item.hsn || ''}</td>
+                                    <td className="border-r border-gray-300 px-2 py-2 text-center">{item.quantity} ({item.unit || 'PIECE'})</td>
+                                    <td className="border-r border-gray-300 px-2 py-2 text-right">{price.toFixed(2)}</td>
+                                    <td className="border-r border-gray-300 px-2 py-2 text-center">{discPct > 0 ? `${discPct.toFixed(2)}%` : ''}</td>
+                                    <td className="px-2 py-2 text-right font-semibold">{finalPrice.toFixed(2)}</td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+                </div>
+
+                {/* ===== TOTALS (right-aligned table continuing the border) ===== */}
+                <div className="border-t border-gray-400">
+                    <table className="w-full border-collapse text-[11px]">
+                        <tbody>
+                            <tr className="border-b border-gray-300">
+                                <td className="px-3 py-1.5 text-right font-bold"  colSpan={1}>Total :</td>
+                                <td className="px-3 py-1.5 text-right font-bold w-[100px] border-l border-gray-300">{subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            </tr>
+                            {totalTax > 0 && (
+                                <tr className="border-b border-gray-300">
+                                    <td className="px-3 py-1.5 text-right font-bold">GST :</td>
+                                    <td className="px-3 py-1.5 text-right font-bold border-l border-gray-300">{totalTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                </tr>
+                            )}
+                            {totalTax > 0 && (
+                                <tr className="border-b border-gray-300">
+                                    <td className="px-3 py-1.5 text-right font-bold">Total Amount (Including GST) :</td>
+                                    <td className="px-3 py-1.5 text-right font-bold border-l border-gray-300">{totalWithTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                </tr>
+                            )}
+                            {(data.transportationCharge || data.additionalCharges) ? (
+                                <tr className="border-b border-gray-300">
+                                    <td className="px-3 py-1.5 text-right font-bold">Transportation Charge :</td>
+                                    <td className="px-3 py-1.5 text-right font-bold border-l border-gray-300">{Number(data.transportationCharge || data.additionalCharges || 0).toLocaleString('en-IN')}</td>
+                                </tr>
+                            ) : null}
+                            <tr className="border-b border-gray-400">
+                                <td className="px-3 py-2 text-right font-bold text-[12px]">Grand Total :</td>
+                                <td className="px-3 py-2 text-right font-bold text-[12px] border-l border-gray-300">{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            </tr>
+                            {received > 0 && (
+                                <tr className="border-b border-gray-300">
+                                    <td className="px-3 py-1.5 text-right font-bold">Received :</td>
+                                    <td className="px-3 py-1.5 text-right font-bold text-green-700 border-l border-gray-300">{received.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                </tr>
+                            )}
+                            {balance > 0 && (
+                                <tr className="border-b border-gray-300">
+                                    <td className="px-3 py-1.5 text-right font-bold">Balance Due :</td>
+                                    <td className="px-3 py-1.5 text-right font-bold text-red-600 border-l border-gray-300">{balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* ===== FOOTER: Terms (left) | Signatory (right) ===== */}
+                <div className="flex border-t border-gray-400">
+                    {/* Terms */}
+                    <div className="flex-1 p-3 text-[10px] border-r border-gray-400">
+                        <div className="font-bold mb-1">Terms and Condition</div>
+                        <div className="text-gray-700">- 100% Payment in Advance</div>
+                        <div className="text-gray-700">- 50% Payment Right now &amp; 50% Payment after Delivery.</div>
+                    </div>
+                    {/* Signatory */}
+                    <div className="w-[220px] p-3 text-right text-[10.5px] flex flex-col justify-between">
+                        <div className="text-gray-500 text-[10px]">Authorized Signatory</div>
+                        <div>
+                            <div className="font-bold text-[13px] mt-8">{companyName}</div>
+                            <div className="text-[10px] text-gray-500">Date: {invoiceDate}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     // --- Tally Theme ---
     const TallyTemplate = () => {
         const items = data.items || [];
@@ -986,7 +1272,7 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
         const totalAmt = items.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0);
         const subTotal = data.subTotal ?? totalAmt;
         const grandTotal = data.grandTotal ?? totalAmt;
-        const received = data.received || 0;
+        const received = data.received ?? data.receivedAmount ?? data.paidAmount ?? 0;
         const balance = grandTotal - received;
         const companyName = company?.name || data.companyName || 'Your Company';
         const companyAddress = company?.address || data.companyAddress || '';
@@ -1026,12 +1312,12 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
                         </div>
                         <div className="flex gap-1 mb-1">
                             <span className="text-gray-500 w-24 shrink-0">Dated:</span>
-                            <span className="font-semibold">{data.invoiceDate ? format(new Date(data.invoiceDate), 'dd-MMM-yy') : format(new Date(), 'dd-MMM-yy')}</span>
+                            <span className="font-semibold">{data.invoiceDate ? format(safeDate(data.invoiceDate), 'dd-MMM-yy') : format(new Date(), 'dd-MMM-yy')}</span>
                         </div>
                         {data.dueDate && (
                             <div className="flex gap-1 mb-1">
                                 <span className="text-gray-500 w-24 shrink-0">Due Date:</span>
-                                <span className="font-semibold">{format(new Date(data.dueDate), 'dd-MMM-yy')}</span>
+                                <span className="font-semibold">{format(safeDate(data.dueDate), 'dd-MMM-yy')}</span>
                             </div>
                         )}
                         <div className="flex gap-1">
@@ -1208,7 +1494,7 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
         const totalAmt = items.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0);
         const subTotal = data.subTotal ?? totalAmt;
         const grandTotal = data.grandTotal ?? totalAmt;
-        const received = data.received || 0;
+        const received = data.received ?? data.receivedAmount ?? data.paidAmount ?? 0;
         const cgst = (data.totalTax || totalGst) / 2;
         const sgst = (data.totalTax || totalGst) / 2;
         const taxRate = items[0]?.tax?.rate || 0;
@@ -1245,7 +1531,7 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
                             <div className="flex-1 p-2">
                                 <div className="text-[8px] text-gray-500">Date</div>
                                 <div className="font-bold mt-0.5">
-                                    {data.invoiceDate ? format(new Date(data.invoiceDate), 'dd-MM-yyyy') : format(new Date(), 'dd-MM-yyyy')}, {data.invoiceTime || format(new Date(), 'hh:mm a')}
+                                    {data.invoiceDate ? format(safeDate(data.invoiceDate), 'dd-MM-yyyy') : format(new Date(), 'dd-MM-yyyy')}, {data.invoiceTime || format(new Date(), 'hh:mm a')}
                                 </div>
                             </div>
                         </div>
@@ -1399,12 +1685,403 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
         );
     };
 
+    // --- French Elite Template ---
+    const FrenchEliteTemplate = () => {
+        const companyName = company?.name || data.companyName || 'Your Company';
+        const companyAddress = company?.address || data.companyAddress || '';
+        const companyPhone = company?.phone || data.companyPhone || '';
+        const companyGst = company?.gstNumber || data.companyGst || '';
+        const stateOfSupply = company?.state || data.stateOfSupply || '';
+        const items = data.items || [];
+        const totalQty = items.reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0);
+        const totalGst = items.reduce((s: number, i: any) => s + (Number(i.tax?.amount) || 0), 0);
+        const totalAmt = items.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0);
+        const subTotal = data.subTotal ?? totalAmt;
+        const grandTotal = data.grandTotal ?? totalAmt;
+        const received = data.received ?? data.receivedAmount ?? data.paidAmount ?? 0;
+        const balance = grandTotal - received;
+        const accent = themeColor;
+
+        return (
+            <div className="w-full font-sans text-[10px] text-gray-900 bg-white">
+                {/* Top accent bar */}
+                <div className="h-2" style={{ backgroundColor: accent }}></div>
+
+                {/* Header */}
+                <div className="px-6 pt-4 pb-3 flex justify-between items-start">
+                    <div className="flex gap-3 items-start">
+                        <div className="w-14 h-14 bg-gray-200 flex items-center justify-center text-gray-400 font-bold text-[9px] shrink-0 rounded">LOGO</div>
+                        <div>
+                            <div className="font-bold text-lg leading-tight" style={{ color: accent }}>{companyName}</div>
+                            {companyAddress && <div className="text-[9px] text-gray-500 mt-0.5 max-w-xs">{companyAddress}</div>}
+                            <div className="flex gap-3 mt-1 text-[9px]">
+                                {companyPhone && <span>Ph: <span className="font-semibold">{companyPhone}</span></span>}
+                                {companyGst && <span>GSTIN: <span className="font-semibold">{companyGst}</span></span>}
+                            </div>
+                            {stateOfSupply && <div className="text-[9px] mt-0.5">State: {stateOfSupply}</div>}
+                        </div>
+                    </div>
+                    <div className="text-right">
+                        <div className="font-bold text-xl uppercase tracking-wide" style={{ color: accent }}>{docTitle}</div>
+                        <div className="mt-2 text-[10px] space-y-0.5">
+                            <div><span className="text-gray-500">No:</span> <span className="font-bold">{data.invoiceNo || data.refNo || '—'}</span></div>
+                            <div><span className="text-gray-500">Date:</span> <span className="font-semibold">{data.invoiceDate ? format(safeDate(data.invoiceDate), 'dd-MM-yyyy') : format(new Date(), 'dd-MM-yyyy')}</span></div>
+                            {data.dueDate && <div><span className="text-gray-500">Due:</span> <span className="font-semibold">{format(safeDate(data.dueDate), 'dd-MM-yyyy')}</span></div>}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="h-px mx-6" style={{ backgroundColor: accent, opacity: 0.3 }}></div>
+
+                {/* Bill To */}
+                <div className="px-6 py-3 flex gap-8">
+                    <div className="flex-1">
+                        <div className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: accent }}>Bill To</div>
+                        <div className="font-bold text-sm">{data.partyName || '—'}</div>
+                        {data.billingAddress && <div className="text-[9px] text-gray-600 mt-0.5">{data.billingAddress}</div>}
+                        {data.phone && <div className="text-[9px] mt-0.5">Ph: {data.phone}</div>}
+                    </div>
+                    {stateOfSupply && (
+                        <div>
+                            <div className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: accent }}>Place of Supply</div>
+                            <div className="text-[10px]">{stateOfSupply}</div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Items Table */}
+                <div className="px-6">
+                    <table className="w-full border-collapse text-[9px]">
+                        <thead>
+                            <tr className="text-white text-[9px]" style={{ backgroundColor: accent }}>
+                                <th className="px-2 py-1.5 text-center w-6 rounded-tl">#</th>
+                                <th className="px-2 py-1.5 text-left">Item Name</th>
+                                <th className="px-1 py-1.5 text-center w-14">HSN/SAC</th>
+                                <th className="px-1 py-1.5 text-center w-10">Qty</th>
+                                <th className="px-1 py-1.5 text-center w-10">Unit</th>
+                                <th className="px-1 py-1.5 text-right w-16">Price/Unit</th>
+                                <th className="px-1 py-1.5 text-right w-16">GST</th>
+                                <th className="px-2 py-1.5 text-right w-18 rounded-tr">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {items.map((item: any, idx: number) => (
+                                <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                    <td className="px-2 py-1.5 text-center">{idx + 1}</td>
+                                    <td className="px-2 py-1.5 font-medium">{item.name}</td>
+                                    <td className="px-1 py-1.5 text-center">{item.hsn || ''}</td>
+                                    <td className="px-1 py-1.5 text-center">{item.quantity}</td>
+                                    <td className="px-1 py-1.5 text-center lowercase">{item.unit}</td>
+                                    <td className="px-1 py-1.5 text-right">₹ {item.priceUnit?.amount?.toFixed(2)}</td>
+                                    <td className="px-1 py-1.5 text-right">{item.tax?.amount > 0 ? `₹ ${item.tax.amount.toFixed(2)}` : '—'}</td>
+                                    <td className="px-2 py-1.5 text-right font-bold">₹ {item.amount?.toFixed(2)}</td>
+                                </tr>
+                            ))}
+                            <tr className="font-bold border-t-2" style={{ borderColor: accent }}>
+                                <td className="px-2 py-1.5"></td>
+                                <td className="px-2 py-1.5">Total</td>
+                                <td className="px-1 py-1.5"></td>
+                                <td className="px-1 py-1.5 text-center">{totalQty}</td>
+                                <td className="px-1 py-1.5"></td>
+                                <td className="px-1 py-1.5"></td>
+                                <td className="px-1 py-1.5 text-right">₹ {(totalGst || data.totalTax || 0).toFixed(2)}</td>
+                                <td className="px-2 py-1.5 text-right">₹ {totalAmt.toFixed(2)}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* Bottom Section */}
+                <div className="px-6 mt-3 flex gap-4">
+                    {/* Left: Words + Terms + Bank */}
+                    <div className="flex-1 text-[9px] space-y-3">
+                        <div>
+                            <div className="font-bold" style={{ color: accent }}>Amount in Words</div>
+                            <div className="italic capitalize mt-0.5">{numberToWords(Math.round(grandTotal))} Rupees Only</div>
+                        </div>
+                        <div>
+                            <div className="font-bold" style={{ color: accent }}>Terms & Conditions</div>
+                            <div className="text-gray-600 mt-0.5">Thanks for doing business with us!</div>
+                        </div>
+                        {(bankAccount?.bankName || company?.bankName) && (
+                            <div className="border-t pt-2" style={{ borderColor: `${accent}40` }}>
+                                <div className="font-bold mb-1" style={{ color: accent }}>Bank Details</div>
+                                <div className="grid grid-cols-[auto_1fr] gap-x-2">
+                                    <span>Bank:</span><span className="font-bold uppercase">{bankAccount?.bankName || company?.bankName || '—'}</span>
+                                    <span>A/c No:</span><span className="font-bold">{bankAccount?.accountNumber || company?.bankAccountNo || '—'}</span>
+                                    <span>IFSC:</span><span className="font-bold uppercase">{bankAccount?.ifscCode || company?.bankIfsc || '—'}</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Right: Totals */}
+                    <div className="w-[40%]">
+                        <div className="rounded-lg border overflow-hidden" style={{ borderColor: `${accent}40` }}>
+                            <div className="px-3 py-1.5 flex justify-between border-b" style={{ borderColor: `${accent}20` }}>
+                                <span>Sub Total</span><span className="font-semibold">₹ {subTotal.toFixed(2)}</span>
+                            </div>
+                            {(data.totalTax || 0) > 0 && (
+                                <div className="px-3 py-1.5 flex justify-between border-b text-gray-600" style={{ borderColor: `${accent}20` }}>
+                                    <span>Tax</span><span>₹ {(data.totalTax || totalGst).toFixed(2)}</span>
+                                </div>
+                            )}
+                            {data.roundOff !== undefined && data.roundOff !== 0 && (
+                                <div className="px-3 py-1.5 flex justify-between border-b text-gray-600" style={{ borderColor: `${accent}20` }}>
+                                    <span>Round Off</span><span>{data.roundOff > 0 ? '+' : ''}{data.roundOff}</span>
+                                </div>
+                            )}
+                            <div className="px-3 py-2 flex justify-between font-bold text-white text-sm" style={{ backgroundColor: accent }}>
+                                <span>Total</span><span>₹ {grandTotal.toFixed(2)}</span>
+                            </div>
+                            {received > 0 && (
+                                <div className="px-3 py-1.5 flex justify-between border-b text-gray-600" style={{ borderColor: `${accent}20` }}>
+                                    <span>Received</span><span>₹ {received.toFixed(2)}</span>
+                                </div>
+                            )}
+                            <div className="px-3 py-1.5 flex justify-between font-bold">
+                                <span>Balance</span><span style={{ color: accent }}>₹ {balance.toFixed(2)}</span>
+                            </div>
+                        </div>
+
+                        <div className="mt-6 text-right text-[9px]">
+                            <div className="text-left mb-1">For <span className="font-bold">{companyName}</span></div>
+                            <div className="mt-8 border-t pt-1 font-bold text-center" style={{ borderColor: accent }}>Authorized Signatory</div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Bottom accent bar */}
+                <div className="h-1 mt-4" style={{ backgroundColor: accent }}></div>
+            </div>
+        );
+    };
+
+    // --- Double Divine Template ---
+    const DoubleDivineTemplate = () => {
+        const companyName = company?.name || data.companyName || 'Your Company';
+        const companyAddress = company?.address || data.companyAddress || '';
+        const companyPhone = company?.phone || data.companyPhone || '';
+        const companyGst = company?.gstNumber || data.companyGst || '';
+        const stateOfSupply = company?.state || data.stateOfSupply || '';
+        const items = data.items || [];
+        const totalQty = items.reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0);
+        const totalGst = items.reduce((s: number, i: any) => s + (Number(i.tax?.amount) || 0), 0);
+        const totalAmt = items.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0);
+        const subTotal = data.subTotal ?? totalAmt;
+        const grandTotal = data.grandTotal ?? totalAmt;
+        const received = data.received ?? data.receivedAmount ?? data.paidAmount ?? 0;
+        const balance = grandTotal - received;
+        const cgst = (data.totalTax || totalGst) / 2;
+        const sgst = (data.totalTax || totalGst) / 2;
+        const taxRate = items[0]?.tax?.rate || 0;
+        const halfRate = taxRate / 2;
+        const MIN_ROWS = 5;
+        const emptyRows = Math.max(0, MIN_ROWS - items.length);
+
+        return (
+            <div className="w-full font-sans text-[10px] text-gray-900 bg-white p-3">
+                <div className="border-2 border-gray-800">
+                    <div className="border border-gray-600 m-[2px]">
+                        {/* Title */}
+                        <div className="text-center font-bold text-sm py-2 border-b-2 border-gray-800 bg-gray-50 uppercase tracking-widest">
+                            {docTitle}
+                        </div>
+
+                        {/* Company + Invoice Details */}
+                        <div className="flex border-b-2 border-gray-800">
+                            {/* Company */}
+                            <div className="flex-1 border-r-2 border-gray-800 p-3 flex gap-3">
+                                <div className="w-14 h-14 bg-gray-200 flex items-center justify-center text-gray-400 font-bold text-[9px] shrink-0 border border-gray-300">LOGO</div>
+                                <div>
+                                    <div className="font-bold text-base leading-tight">{companyName}</div>
+                                    {companyAddress && <div className="text-[9px] text-gray-600 mt-0.5">{companyAddress}</div>}
+                                    <div className="flex gap-3 mt-1 text-[9px]">
+                                        {companyPhone && <span>Phone: <span className="font-semibold">{companyPhone}</span></span>}
+                                        {companyGst && <span>GSTIN: <span className="font-semibold">{companyGst}</span></span>}
+                                    </div>
+                                    {stateOfSupply && <div className="text-[9px] mt-0.5">State: {stateOfSupply}</div>}
+                                </div>
+                            </div>
+                            {/* Invoice Info */}
+                            <div className="w-[35%] p-3">
+                                <div className="space-y-1.5 text-[10px]">
+                                    <div className="flex justify-between"><span className="text-gray-500 font-semibold">Invoice No:</span><span className="font-bold">{data.invoiceNo || data.refNo || '—'}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-500 font-semibold">Date:</span><span className="font-bold">{data.invoiceDate ? format(safeDate(data.invoiceDate), 'dd-MM-yyyy') : format(new Date(), 'dd-MM-yyyy')}</span></div>
+                                    {data.dueDate && <div className="flex justify-between"><span className="text-gray-500 font-semibold">Due Date:</span><span className="font-bold">{format(safeDate(data.dueDate), 'dd-MM-yyyy')}</span></div>}
+                                    <div className="flex justify-between"><span className="text-gray-500 font-semibold">Place of Supply:</span><span className="font-bold">{stateOfSupply || '—'}</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Bill To / Ship To */}
+                        <div className="flex border-b-2 border-gray-800">
+                            <div className="w-1/2 border-r-2 border-gray-800 p-3">
+                                <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1 border-b border-gray-300 pb-1">BILL TO</div>
+                                <div className="font-bold text-sm mt-1">{data.partyName || '—'}</div>
+                                {data.billingAddress && <div className="text-[9px] text-gray-600 mt-0.5">{data.billingAddress}</div>}
+                                {data.phone && <div className="mt-0.5 text-[9px]">Ph: <span className="font-semibold">{data.phone}</span></div>}
+                            </div>
+                            <div className="w-1/2 p-3">
+                                <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1 border-b border-gray-300 pb-1">SHIP TO</div>
+                                <div className="font-bold text-sm mt-1">{data.partyName || '—'}</div>
+                                {(data.shippingAddress || data.billingAddress) && <div className="text-[9px] text-gray-600 mt-0.5">{data.shippingAddress || data.billingAddress}</div>}
+                            </div>
+                        </div>
+
+                        {/* Items Table */}
+                        <table className="w-full border-collapse text-[9px]">
+                            <thead>
+                                <tr className="border-b-2 border-gray-800 bg-gray-100 font-bold">
+                                    <th className="border-r border-gray-600 px-1 py-1.5 w-6 text-center">#</th>
+                                    <th className="border-r border-gray-600 px-2 py-1.5 text-left">Item Name</th>
+                                    <th className="border-r border-gray-600 px-1 py-1.5 w-14 text-center">HSN/SAC</th>
+                                    <th className="border-r border-gray-600 px-1 py-1.5 w-10 text-right">Qty</th>
+                                    <th className="border-r border-gray-600 px-1 py-1.5 w-10 text-center">Unit</th>
+                                    <th className="border-r border-gray-600 px-1 py-1.5 w-16 text-right">Price/Unit</th>
+                                    <th className="border-r border-gray-600 px-1 py-1.5 w-16 text-right">GST</th>
+                                    <th className="px-2 py-1.5 w-18 text-right">Amount (₹)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {items.map((item: any, idx: number) => (
+                                    <tr key={idx} className="border-b border-gray-200">
+                                        <td className="border-r border-gray-600 px-1 py-1.5 text-center">{idx + 1}</td>
+                                        <td className="border-r border-gray-600 px-2 py-1.5 font-medium">{item.name}</td>
+                                        <td className="border-r border-gray-600 px-1 py-1.5 text-center">{item.hsn || ''}</td>
+                                        <td className="border-r border-gray-600 px-1 py-1.5 text-right">{item.quantity}</td>
+                                        <td className="border-r border-gray-600 px-1 py-1.5 text-center lowercase">{item.unit}</td>
+                                        <td className="border-r border-gray-600 px-1 py-1.5 text-right">{Number(item.priceUnit?.amount || 0).toFixed(2)}</td>
+                                        <td className="border-r border-gray-600 px-1 py-1.5 text-right">{item.tax?.amount > 0 ? `${item.tax.amount.toFixed(2)} (${item.tax.rate}%)` : '—'}</td>
+                                        <td className="px-2 py-1.5 text-right font-bold">{Number(item.amount || 0).toFixed(2)}</td>
+                                    </tr>
+                                ))}
+                                {Array.from({ length: emptyRows }).map((_, i) => (
+                                    <tr key={`e-${i}`} className="border-b border-gray-100">
+                                        <td className="border-r border-gray-600 px-1 py-2">&nbsp;</td>
+                                        <td className="border-r border-gray-600 px-2 py-2"></td>
+                                        <td className="border-r border-gray-600 px-1 py-2"></td>
+                                        <td className="border-r border-gray-600 px-1 py-2"></td>
+                                        <td className="border-r border-gray-600 px-1 py-2"></td>
+                                        <td className="border-r border-gray-600 px-1 py-2"></td>
+                                        <td className="border-r border-gray-600 px-1 py-2"></td>
+                                        <td className="px-2 py-2"></td>
+                                    </tr>
+                                ))}
+                                <tr className="border-t-2 border-b-2 border-gray-800 font-bold bg-gray-50">
+                                    <td className="border-r border-gray-600 px-1 py-1.5"></td>
+                                    <td className="border-r border-gray-600 px-2 py-1.5">Total</td>
+                                    <td className="border-r border-gray-600 px-1 py-1.5"></td>
+                                    <td className="border-r border-gray-600 px-1 py-1.5 text-right">{totalQty}</td>
+                                    <td className="border-r border-gray-600 px-1 py-1.5"></td>
+                                    <td className="border-r border-gray-600 px-1 py-1.5"></td>
+                                    <td className="border-r border-gray-600 px-1 py-1.5 text-right">₹ {(totalGst || data.totalTax || 0).toFixed(2)}</td>
+                                    <td className="px-2 py-1.5 text-right">₹ {totalAmt.toFixed(2)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        {/* Bottom: Left (words+tax+terms+bank) | Right (totals+sign) */}
+                        <div className="flex border-t-0">
+                            {/* Left */}
+                            <div className="flex-1 border-r-2 border-gray-800 flex flex-col text-[9px]">
+                                {/* Amount in words */}
+                                <div className="px-3 py-2 border-b border-gray-600">
+                                    <span className="font-bold">Amount in Words: </span>
+                                    <span className="italic capitalize">{numberToWords(Math.round(grandTotal))} Rupees Only</span>
+                                </div>
+
+                                {/* Tax breakdown */}
+                                <div className="border-b border-gray-600">
+                                    <table className="w-full border-collapse text-[8px]">
+                                        <thead>
+                                            <tr className="bg-gray-100 font-bold border-b border-gray-600">
+                                                <th className="border-r border-gray-400 px-1 py-1 w-16">HSN/SAC</th>
+                                                <th className="border-r border-gray-400 px-1 py-1 w-16">Taxable Amt</th>
+                                                <th className="border-r border-gray-400 px-1 py-1" colSpan={2}>CGST</th>
+                                                <th className="border-r border-gray-400 px-1 py-1" colSpan={2}>SGST</th>
+                                                <th className="px-1 py-1">Total Tax</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr className="text-center">
+                                                <td className="border-r border-gray-400 px-1 py-1">{items[0]?.hsn || ''}</td>
+                                                <td className="border-r border-gray-400 px-1 py-1 text-right">₹ {subTotal.toFixed(2)}</td>
+                                                <td className="border-r border-gray-400 px-1 py-1">{halfRate || 9}%</td>
+                                                <td className="border-r border-gray-400 px-1 py-1 text-right">₹ {cgst.toFixed(2)}</td>
+                                                <td className="border-r border-gray-400 px-1 py-1">{halfRate || 9}%</td>
+                                                <td className="border-r border-gray-400 px-1 py-1 text-right">₹ {sgst.toFixed(2)}</td>
+                                                <td className="px-1 py-1 text-right">₹ {(data.totalTax || totalGst).toFixed(2)}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* Terms */}
+                                <div className="px-3 py-2 border-b border-gray-600">
+                                    <div className="font-bold underline mb-1">Terms & Conditions:</div>
+                                    <div className="text-gray-600">1. Goods once sold will not be taken back.</div>
+                                    <div className="text-gray-600">2. Interest @18% p.a. if not paid within due date.</div>
+                                </div>
+
+                                {/* Bank + QR */}
+                                <div className="px-3 py-2 flex gap-3">
+                                    <div className="flex-1">
+                                        <div className="font-bold underline mb-1">Bank Details:</div>
+                                        <div className="grid grid-cols-[auto_1fr] gap-x-2">
+                                            <span>Bank:</span><span className="font-bold uppercase">{bankAccount?.bankName || company?.bankName || '—'}</span>
+                                            <span>A/c No:</span><span className="font-bold">{bankAccount?.accountNumber || company?.bankAccountNo || '—'}</span>
+                                            <span>IFSC:</span><span className="font-bold uppercase">{bankAccount?.ifscCode || company?.bankIfsc || '—'}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col items-center justify-center shrink-0">
+                                        {(bankAccount?.upiId || company?.upiId) ? (
+                                            <img src={`https://api.qrserver.com/v1/create-qr-code/?size=64x64&data=${encodeURIComponent(`upi://pay?pa=${bankAccount?.upiId || company?.upiId}&pn=${encodeURIComponent(bankAccount?.accountHolderName || company?.name || '')}&am=${grandTotal}&cu=INR`)}`} alt="UPI QR" width={64} height={64} crossOrigin="anonymous" />
+                                        ) : (
+                                            <div className="w-14 h-14 border-2 border-dashed border-gray-400 flex flex-col items-center justify-center text-gray-400 text-[7px] text-center"><span className="text-base">📱</span><span>Set UPI</span></div>
+                                        )}
+                                        <span className="text-[7px] text-green-700 font-bold mt-0.5">SCAN TO PAY</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Right: Totals + Signatory */}
+                            <div className="w-44 flex flex-col text-[10px]">
+                                <div className="px-3 py-1.5 flex justify-between border-b border-gray-600"><span className="text-gray-600">Sub Total</span><span className="font-semibold">₹ {subTotal.toFixed(2)}</span></div>
+                                {(data.totalTax || 0) > 0 && (
+                                    <div className="px-3 py-1.5 flex justify-between border-b border-gray-600 text-gray-600"><span>Tax</span><span>₹ {(data.totalTax || totalGst).toFixed(2)}</span></div>
+                                )}
+                                {data.roundOff !== undefined && data.roundOff !== 0 && (
+                                    <div className="px-3 py-1.5 flex justify-between border-b border-gray-600 text-gray-600"><span>Round Off</span><span>{data.roundOff > 0 ? '+' : ''}{data.roundOff}</span></div>
+                                )}
+                                <div className="px-3 py-2 flex justify-between border-b-2 border-gray-800 font-bold text-sm bg-gray-100"><span>Total</span><span>₹ {grandTotal.toFixed(2)}</span></div>
+                                {received > 0 && (
+                                    <div className="px-3 py-1.5 flex justify-between border-b border-gray-600 text-gray-600"><span>Received</span><span>₹ {received.toFixed(2)}</span></div>
+                                )}
+                                <div className="px-3 py-1.5 flex justify-between border-b border-gray-600 font-bold text-red-600"><span>Balance</span><span>₹ {balance.toFixed(2)}</span></div>
+
+                                {/* Signatory */}
+                                <div className="flex-1 flex flex-col justify-end p-3 text-center text-[9px]">
+                                    <div className="text-left">For <span className="font-bold">{companyName}</span></div>
+                                    <div className="mt-8 border-t-2 border-gray-800 pt-1 font-bold">Authorized Signatory</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     // Function to render the active template
     const Template = () => {
+        if (activeTheme === 'default') return <DefaultTemplate />;
         if (activeTheme === 'tally') return <TallyTemplate />;
         if (activeTheme === 'gst1') return <GstTheme1Template />;
         if (activeTheme === 'gst3') return <GstTheme3Template />;
-        if (activeTheme === 'landscape') return <LandscapeTemplate2 />;
+        if (activeTheme === 'doubleDivine') return <DoubleDivineTemplate />;
+        if (activeTheme === 'frenchElite') return <FrenchEliteTemplate />;
+        if (activeTheme === 'landscape') return <LandscapeTemplate />;
         if (activeTheme === 'landscape2') return <LandscapeTemplate2 />;
         return <GenericTemplate />;
     };
@@ -1524,28 +2201,6 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
                     </div>
 
                     <div className="flex items-center gap-4">
-                        <div className="hidden md:flex items-center gap-2 mr-2">
-                            <Button variant="outline" size="sm" onClick={handlePrintPdf} className="hidden lg:flex gap-2">
-                                <Printer className="h-4 w-4" /> Print PDF
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={handlePrint} className="hidden lg:flex gap-2">
-                                <Printer className="h-4 w-4" /> Thermal
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={handleDownloadPdf} className="hidden lg:flex gap-2">
-                                <Download className="h-4 w-4" /> Download
-                            </Button>
-
-                            <div className="h-6 w-px bg-gray-300 mx-2 hidden lg:block"></div>
-
-                            <input
-                                type="checkbox"
-                                checked={!showPreviewAgain}
-                                onChange={() => setShowPreviewAgain(!showPreviewAgain)}
-                                id="dontShow"
-                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            <label htmlFor="dontShow" className="text-sm text-gray-600 cursor-pointer select-none">Do not show again</label>
-                        </div>
                         <Button onClick={onClose} className="bg-blue-600 hover:bg-blue-700 text-white min-w-[120px]">
                             Save & Close
                         </Button>
@@ -1553,9 +2208,9 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
                 </div>
 
                 {/* Preview Area */}
-                <div className="flex-1 overflow-auto p-3 flex justify-center items-start bg-slate-100">
-                    <div className="shadow-2xl origin-top w-full max-w-[900px]">
-                        <div className="w-full min-h-[297mm] bg-white" ref={componentRef}>
+                <div className="flex-1 overflow-auto p-4 flex justify-center items-start bg-slate-100">
+                    <div className="shadow-2xl origin-top w-full max-w-[210mm]">
+                        <div className="w-full min-h-[297mm] bg-white p-[12mm]" ref={componentRef}>
                             <Template />
                         </div>
                     </div>
@@ -1583,31 +2238,35 @@ export const InvoicePreview = ({ isOpen, onClose, data, type = 'INVOICE' }: Invo
                 {/* Share Invoice */}
                 <div className="px-4 py-2">
                     <h3 className="font-bold text-gray-700 mb-3 text-xs uppercase tracking-wider">Share Invoice</h3>
-                    <div className="grid grid-cols-4 gap-1">
-                        <button className="flex flex-col items-center gap-1.5 hover:bg-green-50 p-2 rounded-lg transition-colors relative" onClick={handleWhatsappShare}>
+                    <div className="grid grid-cols-2 gap-2 max-w-[180px]">
+                        <button
+                            className="flex flex-col items-center gap-1.5 hover:bg-green-50 p-2 rounded-lg transition-colors relative disabled:opacity-50"
+                            onClick={handleWhatsappShare}
+                            disabled={isSharing}
+                        >
                             <div className="bg-green-100 p-2.5 rounded-full">
-                                <MessageSquare className="h-4 w-4 text-green-600" />
+                                {isSharing ? (
+                                    <div className="h-4 w-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                    <MessageSquare className="h-4 w-4 text-green-600" />
+                                )}
                             </div>
                             <span className="text-[9px] font-medium text-gray-600">Whatsapp</span>
                             <span className="absolute top-1 right-1 bg-red-500 text-white text-[7px] font-bold px-1 rounded-full leading-tight">NEW</span>
                         </button>
-                        <button className="flex flex-col items-center gap-1.5 hover:bg-red-50 p-2 rounded-lg transition-colors" onClick={handleEmailShare}>
+                        <button
+                            className="flex flex-col items-center gap-1.5 hover:bg-red-50 p-2 rounded-lg transition-colors disabled:opacity-50"
+                            onClick={handleEmailShare}
+                            disabled={isSharing}
+                        >
                             <div className="bg-red-100 p-2.5 rounded-full">
-                                <Mail className="h-4 w-4 text-red-500" />
+                                {isSharing ? (
+                                    <div className="h-4 w-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                    <Mail className="h-4 w-4 text-red-500" />
+                                )}
                             </div>
                             <span className="text-[9px] font-medium text-gray-600">Gmail</span>
-                        </button>
-                        <button className="flex flex-col items-center gap-1.5 hover:bg-blue-50 p-2 rounded-lg transition-colors">
-                            <div className="bg-blue-100 p-2.5 rounded-full">
-                                <Smartphone className="h-4 w-4 text-blue-500" />
-                            </div>
-                            <span className="text-[9px] font-medium text-gray-600">Message</span>
-                        </button>
-                        <button className="flex flex-col items-center gap-1.5 hover:bg-orange-50 p-2 rounded-lg transition-colors">
-                            <div className="bg-orange-100 p-2.5 rounded-full">
-                                <Share2 className="h-4 w-4 text-orange-500" />
-                            </div>
-                            <span className="text-[9px] font-medium text-gray-600">Vyapar</span>
                         </button>
                     </div>
                 </div>

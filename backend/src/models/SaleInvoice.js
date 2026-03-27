@@ -77,6 +77,8 @@ const saleInvoiceSchema = new mongoose.Schema({
     remainingAmount: { type: Number, default: 0 }, // Should match balanceDue
 
 
+    saleMode: { type: String, enum: ['REGULAR', 'POS'], default: 'REGULAR' },
+
     isOrder: { type: Boolean, default: false }, // Should be false
     isPaid: { type: Boolean, default: true }, // Usually invoices are treated as finalized sales
     status: { type: String, default: 'Unpaid' }, // Paid, Unpaid, Overdue
@@ -93,5 +95,10 @@ const saleInvoiceSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now }
 });
+
+saleInvoiceSchema.index({ companyId: 1, createdAt: -1 });
+saleInvoiceSchema.index({ companyId: 1, status: 1 });
+saleInvoiceSchema.index({ companyId: 1, invoiceDate: -1 });
+saleInvoiceSchema.index({ partyId: 1 });
 
 module.exports = mongoose.model('SaleInvoice', saleInvoiceSchema);

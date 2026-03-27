@@ -68,4 +68,6 @@ const proformaInvoiceSchema = new mongoose.Schema({
     updatedAt: { type: Date, default: Date.now }
 });
 
+proformaInvoiceSchema.index({ companyId: 1, createdAt: -1 });
+
 module.exports = mongoose.model('ProformaInvoice', proformaInvoiceSchema);

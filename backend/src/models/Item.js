@@ -22,6 +22,19 @@ const itemSchema = new mongoose.Schema({
         default: true
     },
 
+    // Online Store — hidden means excluded from online store view; false = visible (default)
+    isHiddenFromStore: {
+        type: Boolean,
+        default: false
+    },
+
+    // Online Store — store-specific stock status; false = in stock (default)
+    // Independent of isActive (BillingBaba inventory status)
+    isOutOfStockOnStore: {
+        type: Boolean,
+        default: false
+    },
+
     // --- References ---
     product: {
         type: mongoose.Schema.Types.ObjectId,
@@ -37,5 +50,9 @@ const itemSchema = new mongoose.Schema({
         default: Date.now
     }
 });
+
+itemSchema.index({ companyId: 1 });
+itemSchema.index({ companyId: 1, isActive: 1 });
+itemSchema.index({ companyId: 1, type: 1 });
 
 module.exports = mongoose.model('Item', itemSchema);

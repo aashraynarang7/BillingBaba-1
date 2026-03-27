@@ -4,16 +4,18 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Share2 } from 'lucide-react';
-import CreateSaleOrderPage from './CreateSalesOrder';
-import CreateSaleInvoicePage from './CreateSaleInvoicePage';
-import ShareStoreModal from '../component/ShareStoreModal';
 import TransactionsTable from '../component/TransactionsTable';
 import { fetchSaleOrders, convertToInvoice } from '@/lib/api';
 import { Transaction } from '@/lib/types';
 import { format } from 'date-fns';
 import FilterBar from '../component/FilterBar';
-import { InvoicePreview } from '../component/InvoicePreview';
 import { toast } from '@/components/ui/use-toast';
+import dynamic from 'next/dynamic';
+
+const CreateSaleOrderPage = dynamic(() => import('./CreateSalesOrder'), { ssr: false });
+const CreateSaleInvoicePage = dynamic(() => import('./CreateSaleInvoicePage'), { ssr: false });
+const ShareStoreModal = dynamic(() => import('../component/ShareStoreModal'), { ssr: false });
+const InvoicePreview = dynamic(() => import('../component/InvoicePreview').then(m => ({ default: m.InvoicePreview })), { ssr: false });
 
 const SaleOrderIllustration = () => (
     <div className="relative mb-8 flex h-40 w-40 items-center justify-center">
@@ -92,6 +94,7 @@ export default function SaleOrderPage() {
 
     // Filters
     const [filters, setFilters] = useState<any>({});
+    const [availableStatuses, setAvailableStatuses] = useState<string[]>([]);
 
     // API State
     const [orders, setOrders] = useState<Transaction[]>([]);
@@ -117,6 +120,9 @@ export default function SaleOrderPage() {
                     ? `#${order.convertedToInvoiceId.invoiceNumber}` : undefined,
             }));
             setOrders(mappedOrders);
+            if (!filters.status) {
+                setAvailableStatuses([...new Set(mappedOrders.map((t: any) => t.status).filter(Boolean))] as string[]);
+            }
         } catch (error) {
             console.error("Failed to fetch orders", error);
         } finally {
@@ -130,10 +136,33 @@ export default function SaleOrderPage() {
         }
     }, [isCreatingOrder, conversionOrder, editingOrder, activeTab, filters]);
 
+    useEffect(() => {
+        const preload = () => {
+            import('./CreateSalesOrder');
+            import('./CreateSaleInvoicePage');
+            import('../component/ShareStoreModal');
+            import('../component/InvoicePreview');
+        };
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+            const id = (window as any).requestIdleCallback(preload, { timeout: 2000 });
+            return () => (window as any).cancelIdleCallback(id);
+        } else {
+            const t = setTimeout(preload, 1000);
+            return () => clearTimeout(t);
+        }
+    }, []);
+
     const handleConvert = (id: string) => {
-        const orderToConvert = orders.find(o => o.id === id);
+        const orderToConvert = orders.find(o => String(o.id) === id || String((o as any)._id) === id);
         if (orderToConvert) {
-            setConversionOrder(orderToConvert);
+            setConversionOrder({
+                ...orderToConvert,
+                _id: undefined,
+                orderId: id,
+                orderNumber: undefined,
+                invoiceNumber: '',
+                invoiceDate: new Date(),
+            } as any);
         }
     };
 
@@ -143,13 +172,12 @@ export default function SaleOrderPage() {
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this order?")) return;
+        if (!confirm("Permanently delete this order? This cannot be undone.")) return;
         try {
-            const { cancelSale } = await import('@/lib/api');
-            await cancelSale(id);
+            const { deleteSale } = await import('@/lib/api');
+            await deleteSale(id);
             loadOrders();
         } catch (error) {
-            console.error("Failed to delete", error);
             toast({ title: "Failed to delete order", variant: "destructive" });
         }
     };
@@ -221,7 +249,7 @@ export default function SaleOrderPage() {
                             ) : (orders.length > 0 || Object.keys(filters).length > 0) ? (
                                 <div>
                                     <div className="flex justify-between items-center mb-4">
-                                        <FilterBar onFilterChange={setFilters} />
+                                        <FilterBar onFilterChange={setFilters} statusOptions={availableStatuses} />
                                         <Button
                                             className="bg-[var(--accent-orange)] hover:bg-[var(--primary-red)] text-white"
                                             onClick={() => setIsCreatingOrder(true)}

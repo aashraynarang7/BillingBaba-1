@@ -43,6 +43,17 @@ export const createParty = async (data: any) => {
     return response.json();
 };
 
+export const bulkImportParties = async (parties: any[]) => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    const response = await fetch(`${API_BASE_URL}/parties/bulk-import`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ companyId, parties }),
+    });
+    if (!response.ok) throw new Error('Failed to import parties');
+    return response.json();
+};
+
 export const updateParty = async (id: string, data: any) => {
     const isFormData = data instanceof FormData;
     const response = await fetch(`${API_BASE_URL}/parties/${id}`, {
@@ -112,7 +123,9 @@ export const deleteItem = async (id: string) => {
     });
     if (!response.ok) {
         const err = await response.json().catch(() => ({}));
-        throw new Error(err.message || 'Failed to delete item');
+        const error: any = new Error(err.message || 'Failed to delete item');
+        error.breakdown = err.breakdown ?? null;
+        throw error;
     }
     return response.json();
 };
@@ -184,7 +197,8 @@ export const convertToInvoice = async (id: string, data?: any) => {
 };
 
 export const fetchUsers = async () => {
-    const response = await fetch(`${API_BASE_URL}/users`, { headers: getHeaders() });
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    const response = await fetch(`${API_BASE_URL}/users/team?companyId=${companyId || ''}`, { headers: getHeaders() });
     if (!response.ok) throw new Error('Failed to fetch users');
     return response.json();
 };
@@ -369,6 +383,12 @@ export const cancelPurchase = async (id: string) => {
 export const fetchPurchaseById = async (id: string) => {
     const response = await fetch(`${API_BASE_URL}/purchases/${id}`, { headers: getHeaders() });
     if (!response.ok) throw new Error('Failed to fetch purchase');
+    return response.json();
+};
+
+export const fetchSaleById = async (id: string) => {
+    const response = await fetch(`${API_BASE_URL}/sales/${id}`, { headers: getHeaders() });
+    if (!response.ok) throw new Error('Failed to fetch sale');
     return response.json();
 };
 
@@ -630,6 +650,25 @@ export const fetchProfitAndLoss = async (filters?: any) => {
     return response.json();
 };
 
+export const fetchDashboardSummary = async () => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    const url = `${API_BASE_URL}/reports/dashboard-summary?companyId=${companyId}`;
+    const response = await fetch(url, { headers: getHeaders() });
+    if (!response.ok) throw new Error('Failed to fetch dashboard summary');
+    return response.json();
+};
+
+export const fetchBillWiseProfit = async (filters?: { startDate?: string; endDate?: string; party?: string }) => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    let url = `${API_BASE_URL}/reports/bill-wise-profit?companyId=${companyId}`;
+    if (filters?.startDate) url += `&startDate=${filters.startDate}`;
+    if (filters?.endDate) url += `&endDate=${filters.endDate}`;
+    if (filters?.party) url += `&party=${encodeURIComponent(filters.party)}`;
+    const response = await fetch(url, { headers: getHeaders() });
+    if (!response.ok) throw new Error('Failed to fetch bill wise profit');
+    return response.json();
+};
+
 export const fetchSaleAgingReport = async (filters?: any) => {
     const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
     let url = `${API_BASE_URL}/reports/sale-aging?companyId=${companyId}`;
@@ -754,4 +793,148 @@ export const logoutWhatsApp = async () => {
     const res = await fetch(`${API_BASE_URL}/whatsapp/logout`, { method: 'POST', headers: getHeaders() });
     return res.json();
 };
+
+// ─── Online Store ────────────────────────────────────────────────────────────
+const onlineStoreUrl = () => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    return `${API_BASE_URL}/online-store`;
+};
+
+export const fetchCompany = async (id?: string) => {
+    const companyId = id || (typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '');
+    if (!companyId) throw new Error('No companyId');
+    const response = await fetch(`${API_BASE_URL}/companies/${companyId}`, { headers: getHeaders() });
+    if (!response.ok) throw new Error('Failed to fetch company');
+    return response.json();
+};
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+export const fetchSettings = async () => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    const response = await fetch(`${API_BASE_URL}/settings?companyId=${companyId}`, { headers: getHeaders() });
+    if (!response.ok) throw new Error('Failed to fetch settings');
+    return response.json();
+};
+
+export const updateSettings = async (data: Record<string, any>) => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    const response = await fetch(`${API_BASE_URL}/settings?companyId=${companyId}`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error('Failed to update settings');
+    return response.json();
+};
+
+export const fetchOnlineStoreItems = async (filters?: { category?: string; search?: string }) => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    let url = `${API_BASE_URL}/online-store/items?companyId=${companyId}`;
+    if (filters?.category && filters.category !== 'All') url += `&category=${encodeURIComponent(filters.category)}`;
+    if (filters?.search) url += `&search=${encodeURIComponent(filters.search)}`;
+    const res = await fetch(url, { headers: getHeaders() });
+    if (!res.ok) throw new Error('Failed to fetch online store items');
+    return res.json();
+};
+
+export const createOnlineStoreItem = async (data: any) => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    const res = await fetch(`${API_BASE_URL}/online-store/items`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ ...data, companyId }),
+    });
+    if (!res.ok) throw new Error('Failed to create online store item');
+    return res.json();
+};
+
+export const bulkAddFromInventory = async (items: any[]) => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    const res = await fetch(`${API_BASE_URL}/online-store/items/bulk-add`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ companyId, items }),
+    });
+    if (!res.ok) throw new Error('Failed to add items to online store');
+    return res.json();
+};
+
+export const updateOnlineStoreItem = async (id: string, data: any) => {
+    const res = await fetch(`${API_BASE_URL}/online-store/items/${id}`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to update online store item');
+    return res.json();
+};
+
+export const deleteOnlineStoreItem = async (id: string) => {
+    const res = await fetch(`${API_BASE_URL}/online-store/items/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to delete online store item');
+    return res.json();
+};
+
+export const fetchOnlineStoreCategories = async () => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    const res = await fetch(`${API_BASE_URL}/online-store/categories?companyId=${companyId}`, { headers: getHeaders() });
+    if (!res.ok) throw new Error('Failed to fetch online store categories');
+    return res.json();
+};
+
+// ─── Party Groups ──────────────────────────────────────────────────────────────
+
+export const fetchPartyGroups = async () => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    const res = await fetch(`${API_BASE_URL}/party-groups?companyId=${companyId}`, { headers: getHeaders() });
+    if (!res.ok) throw new Error('Failed to fetch party groups');
+    return res.json();
+};
+
+export const createPartyGroup = async (name: string, description?: string) => {
+    const res = await fetch(`${API_BASE_URL}/party-groups`, {
+        method: 'POST', headers: getHeaders(), body: getBody({ name, description }),
+    });
+    if (!res.ok) throw new Error('Failed to create party group');
+    return res.json();
+};
+
+export const updatePartyGroup = async (id: string, name: string, description?: string) => {
+    const res = await fetch(`${API_BASE_URL}/party-groups/${id}`, {
+        method: 'PUT', headers: getHeaders(), body: JSON.stringify({ name, description }),
+    });
+    if (!res.ok) throw new Error('Failed to update party group');
+    return res.json();
+};
+
+export const deletePartyGroup = async (id: string) => {
+    const res = await fetch(`${API_BASE_URL}/party-groups/${id}`, {
+        method: 'DELETE', headers: getHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to delete party group');
+    return res.json();
+};
+
+export const fetchPartiesByGroup = async (groupName: string) => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    const res = await fetch(
+        `${API_BASE_URL}/party-groups/parties?companyId=${companyId}&groupName=${encodeURIComponent(groupName)}`,
+        { headers: getHeaders() }
+    );
+    if (!res.ok) throw new Error('Failed to fetch parties by group');
+    return res.json();
+};
+
+export const movePartyToGroup = async (partyId: string, groupName: string) => {
+    const res = await fetch(`${API_BASE_URL}/party-groups/move-party`, {
+        method: 'POST', headers: getHeaders(), body: JSON.stringify({ partyId, groupName }),
+    });
+    if (!res.ok) throw new Error('Failed to move party to group');
+    return res.json();
+};
+
 

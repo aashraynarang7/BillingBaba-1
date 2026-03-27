@@ -3,15 +3,17 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import CreatePurchaseFAPage from '../component/CreatePurchaseFAPage';
 import FilterBar from '@/app/dashboard/sales/component/FilterBar';
 import TransactionsTable from '@/app/dashboard/sales/component/TransactionsTable';
-import { fetchPurchases } from '@/lib/api';
+import { fetchPurchases, fetchPurchaseById } from '@/lib/api';
 import { Transaction } from '@/lib/types';
 import { format } from 'date-fns';
 import { Card, CardContent } from '@/components/ui/card';
-import { InvoicePreview } from '@/app/dashboard/sales/component/InvoicePreview';
 import { toast } from '@/components/ui/use-toast';
+import dynamic from 'next/dynamic';
+
+const CreatePurchaseFAPage = dynamic(() => import('../component/CreatePurchaseFAPage'), { ssr: false });
+const InvoicePreview = dynamic(() => import('@/app/dashboard/sales/component/InvoicePreview').then(m => ({ default: m.InvoicePreview })), { ssr: false });
 
 const PurchaseFAIllustration = () => (
     <div className="relative mb-8 flex h-40 w-40 items-center justify-center">
@@ -31,6 +33,8 @@ export default function PurchaseFAPage() {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filters, setFilters] = useState<any>({});
+    const [availableStatuses, setAvailableStatuses] = useState<string[]>([]);
+    const [editingData, setEditingData] = useState<any>(null);
     const [printInvoiceData, setPrintInvoiceData] = useState<any>(null);
 
     const loadPurchases = async () => {
@@ -55,6 +59,9 @@ export default function PurchaseFAPage() {
             }));
 
             setTransactions(mapped);
+            if (!filters.status) {
+                setAvailableStatuses([...new Set(mapped.map((t: any) => t.status).filter(Boolean))] as string[]);
+            }
         } catch (error) {
             console.error("Failed to load purchases", error);
         } finally {
@@ -68,20 +75,39 @@ export default function PurchaseFAPage() {
         }
     }, [isCreating, filters]);
 
+    useEffect(() => {
+        const preload = () => {
+            import('../component/CreatePurchaseFAPage');
+            import('@/app/dashboard/sales/component/InvoicePreview');
+        };
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+            const id = (window as any).requestIdleCallback(preload, { timeout: 2000 });
+            return () => (window as any).cancelIdleCallback(id);
+        } else {
+            const t = setTimeout(preload, 1000);
+            return () => clearTimeout(t);
+        }
+    }, []);
+
     const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure?")) return;
+        if (!confirm("Permanently delete this Fixed Asset? This cannot be undone.")) return;
         try {
-            const { cancelPurchase } = await import('@/lib/api');
-            await cancelPurchase(id);
+            const { deletePurchase } = await import('@/lib/api');
+            await deletePurchase(id);
             loadPurchases();
         } catch (error) {
-            console.error(error);
-            toast({ title: "Failed to cancel", variant: "destructive" });
+            toast({ title: "Failed to delete", variant: "destructive" });
         }
     };
 
-    const handleEdit = (id: string) => {
-        setIsCreating(true);
+    const handleEdit = async (id: string) => {
+        try {
+            const data = await fetchPurchaseById(id);
+            setEditingData(data);
+            setIsCreating(true);
+        } catch (error) {
+            toast({ title: "Failed to load details for editing.", variant: "destructive" });
+        }
     };
 
     const handlePrint = (id: string) => {
@@ -89,15 +115,23 @@ export default function PurchaseFAPage() {
         if (t) setPrintInvoiceData(t);
     };
 
-    const handleDuplicate = (id: string) => {
-        setIsCreating(true);
+    const handleDuplicate = async (id: string) => {
+        try {
+            const data = await fetchPurchaseById(id);
+            setEditingData({ ...data, _id: undefined, billNumber: '', billDate: new Date() });
+            setIsCreating(true);
+        } catch (error) {
+            toast({ title: "Failed to load details for duplication.", variant: "destructive" });
+        }
     };
 
     if (isCreating) {
         return (
             <div className="w-full bg-slate-50 min-h-screen">
-                {/* The CreatePage component handles its own layout/padding usually, but let's wrap it to match others */}
-                <CreatePurchaseFAPage onCancel={() => setIsCreating(false)} />
+                <CreatePurchaseFAPage
+                    onCancel={() => { setIsCreating(false); setEditingData(null); }}
+                    initialData={editingData}
+                />
             </div>
         );
     }
@@ -111,7 +145,7 @@ export default function PurchaseFAPage() {
             <Card className="shadow-sm">
                 <CardContent className="p-0 divide-y">
                     <div className="p-4 border-b flex justify-between items-center">
-                        <FilterBar onFilterChange={setFilters} />
+                        <FilterBar onFilterChange={setFilters} statusOptions={availableStatuses} />
                         <Button
                             className="bg-[var(--accent-orange)] hover:bg-[var(--primary-red)] text-white"
                             onClick={() => setIsCreating(true)}

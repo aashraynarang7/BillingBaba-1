@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     Calendar as CalendarIcon,
     ChevronDown,
@@ -48,8 +48,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { fetchParties, fetchCompanies, createSaleOrder, fetchItems, updateSale, deleteSale } from '@/lib/api';
-// For now assuming createSaleOrder sends payload to /api/sales, which my controller handles based on docType.
+import { createSaleOrder, updateSale, deleteSale } from '@/lib/api';
+import { useParties, useCompanies, useItems } from '@/lib/hooks/useAppData';
+import { Switch } from '@/components/ui/switch';
+import dynamic from 'next/dynamic';
+
+const InvoicePreview = dynamic(() => import('../component/InvoicePreview').then(m => ({ default: m.InvoicePreview })), { ssr: false });
+const AddItemModal = dynamic(() => import('../../items/component/AddItemModal'), { ssr: false });
+const EditPartyModal = dynamic(() => import('@/components/dashboard/party/EditPartyModal').then(m => ({ default: m.EditPartyModal })), { ssr: false });
 
 const indianStates = [
     "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
@@ -59,11 +65,6 @@ const indianStates = [
     "Uttar Pradesh", "Uttarakhand", "West Bengal", "Delhi"
 ];
 const unitTypes = ["NONE", "BOTTLES", "BAGS", "BOXES", "CANS", "CARTONS", "KG", "LTR", "MTR", "PCS"];
-import { InvoicePreview } from '../component/InvoicePreview';
-
-import AddItemModal from '../../items/component/AddItemModal';
-import { EditPartyModal } from '@/components/dashboard/party/EditPartyModal';
-import { Switch } from '@/components/ui/switch'; // Assuming we have or use simple toggle
 
 type Item = {
     itemId?: string;
@@ -114,9 +115,10 @@ export default function CreateSaleInvoicePage({ onCancel, initialData }: { onCan
     const [invoiceTime, setInvoiceTime] = useState(format(new Date(), 'hh:mm a'));
     const [dueDate, setDueDate] = useState<Date | undefined>(initialData?.dueDate ? new Date(initialData.dueDate) : undefined);
 
-    // Data from API
-    const [parties, setParties] = useState<any[]>([]);
-    const [companies, setCompanies] = useState<any[]>([]);
+    // Data from shared React Query cache (5-min stale time, no duplicate fetches across pages)
+    const { data: parties = [] } = useParties();
+    const { data: companies = [] } = useCompanies();
+    const { data: itemsData = [] } = useItems();
 
     // Form State (Initialize with initialData if present)
     const [paymentType, setPaymentType] = useState<'Cash' | 'Credit'>(initialData?.paymentType || 'Cash');
@@ -149,8 +151,12 @@ export default function CreateSaleInvoicePage({ onCancel, initialData }: { onCan
     );
     const [roundOff, setRoundOff] = useState(initialData?.roundOff || 0);
     const [isRoundOffEnabled, setIsRoundOffEnabled] = useState(!!initialData?.roundOff);
-    // If initialData exists, pre-fill receivedAmount. For edit/view modes.
-    const [receivedAmount, setReceivedAmount] = useState(initialData ? (totalAmountFromInitial(initialData) - Number(initialData.balanceDue || 0)) : 0);
+    // If initialData exists, pre-fill receivedAmount directly from the stored field.
+    // Do NOT compute from grandTotal - balanceDue: balanceDue can be reduced later by
+    // Payment-In records without touching receivedAmount, causing incorrect pre-fill.
+    const [receivedAmount, setReceivedAmount] = useState(
+        initialData ? Number(initialData.receivedAmount ?? 0) : 0
+    );
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [savedData, setSavedData] = useState<any>(null);
 
@@ -170,7 +176,7 @@ export default function CreateSaleInvoicePage({ onCancel, initialData }: { onCan
     const [partySearch, setPartySearch] = useState("");
 
     // Item Search State
-    const [allItems, setAllItems] = useState<any[]>([]);
+    const allItems = itemsData;
     const [activeSearchIndex, setActiveSearchIndex] = useState<number | null>(null);
     const [dropdownCoords, setDropdownCoords] = useState<{ top: number; left: number } | null>(null);
     const tableWrapperRef = React.useRef<HTMLDivElement>(null);
@@ -189,74 +195,17 @@ export default function CreateSaleInvoicePage({ onCancel, initialData }: { onCan
     // Add Party Modal
     const [isPartyModalOpen, setIsPartyModalOpen] = useState(false);
 
-    const refreshItems = async () => {
-        try {
-            const itemsData = await fetchItems();
-            const flattenedItems = itemsData.map((item: any) => {
-                const details = item.product || item.service || {};
-                return {
-                    ...details,
-                    ...item,
-                    unit: details.unit || item.unit,
-                    salePrice: details.salePrice || item.salePrice,
-                    purchasePrice: details.purchasePrice || item.purchasePrice,
-                    taxRate: details.taxRate || item.taxRate,
-                    product: item.product,
-                    service: item.service
-                };
-            });
-            setAllItems(flattenedItems);
-        } catch (error) {
-            console.error("Failed to refresh items", error);
-        }
-    };
+    // Items and parties come from shared React Query cache — no manual refresh needed
+    const refreshItems = () => { /* cache auto-updates on invalidation */ };
+    const refreshParties = () => { /* cache auto-updates on invalidation */ };
 
-    const refreshParties = async () => {
-        try {
-            const partiesData = await fetchParties();
-            setParties(partiesData);
-        } catch (error) {
-            console.error("Failed to refresh parties", error);
-        }
-    };
-
-    useEffect(() => {
-        const loadData = async () => {
-            try {
-                const [partiesData, companiesData, itemsData] = await Promise.all([
-                    fetchParties(partySearch),
-                    fetchCompanies(),
-                    fetchItems()
-                ]);
-                setParties(partiesData);
-                setCompanies(companiesData);
-
-                // Flatten Items logic ...
-                const flattenedItems = itemsData.map((item: any) => {
-                    const details = item.product || item.service || {};
-                    return {
-                        ...details,
-                        ...item,
-                        unit: details.unit || item.unit,
-                        salePrice: details.salePrice || item.salePrice,
-                        purchasePrice: details.purchasePrice || item.purchasePrice,
-                        taxRate: details.taxRate || item.taxRate,
-                        product: item.product,
-                        service: item.service
-                    };
-                });
-                setAllItems(flattenedItems);
-
-                // Invoice number is auto-assigned sequentially by the backend
-            } catch (error) {
-                console.error("Failed to load data", error);
-            }
-        };
-        const timer = setTimeout(() => { loadData(); }, 300);
-        return () => clearTimeout(timer);
-    }, [partySearch]);
-
-    // ... (rest of helper functions)
+    // Client-side party filtering (no extra API call on each keystroke)
+    const filteredParties = useMemo(() =>
+        partySearch.trim()
+            ? parties.filter((p: any) => p.name?.toLowerCase().includes(partySearch.toLowerCase()))
+            : parties,
+        [parties, partySearch]
+    );
 
     const handlePartyChange = (partyId: string) => {
         setSelectedPartyId(partyId);
@@ -288,19 +237,22 @@ export default function CreateSaleInvoicePage({ onCancel, initialData }: { onCan
         setActiveSearchIndex(null);
     };
 
-    const calculateItemAmount = (item: Item) => {
+    const calculateItemAmount = useCallback((item: Item) => {
         const base = (Number(item.qty) || 0) * (Number(item.price) || 0);
         const discountAmount = base * ((Number(item.discountPercent) || 0) / 100);
         const taxRate = (item.tax === 'NONE' || item.tax === 'EXEMPT' || !item.tax) ? 0 : (parseFloat(item.tax.replace(/[^0-9.]/g, '')) || 0);
         const amountAfterDisc = base - discountAmount;
         const taxAmount = amountAfterDisc * (taxRate / 100);
         return amountAfterDisc + taxAmount;
-    };
+    }, []);
 
-    const totalQty = items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
-    const subTotal = items.reduce((sum, item) => sum + calculateItemAmount(item), 0);
-    const effectiveRoundOff = isRoundOffEnabled ? roundOff : 0;
-    const totalAmount = subTotal + Number(effectiveRoundOff);
+    const { totalQty, subTotal, effectiveRoundOff, totalAmount } = useMemo(() => {
+        const tQty = items.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+        const sTotal = items.reduce((sum, item) => sum + calculateItemAmount(item), 0);
+        const eRoundOff = isRoundOffEnabled ? roundOff : 0;
+        const tAmount = sTotal + Number(eRoundOff);
+        return { totalQty: tQty, subTotal: sTotal, effectiveRoundOff: eRoundOff, totalAmount: tAmount };
+    }, [items, isRoundOffEnabled, roundOff, calculateItemAmount]);
 
     // Sync receivedAmount in Add Mode
     useEffect(() => {
@@ -448,7 +400,8 @@ export default function CreateSaleInvoicePage({ onCancel, initialData }: { onCan
         const challanId = conversionSource?.type === 'DELIVERY_CHALLAN' ? conversionSource.id : initialData?.convertedFromChallanId;
         if (challanId) formData.append('convertedFromChallanId', challanId);
 
-        if (initialData?.orderNumber) formData.append('orderId', initialData._id);
+        const orderId = initialData?.orderId || (initialData?.orderNumber ? (initialData._id || initialData.id) : null);
+        if (orderId) formData.append('orderId', String(orderId));
         if (challanId) formData.append('challanId', challanId);
 
         const itemsPayload = items.filter(i => i.name).map(item => {
@@ -595,7 +548,7 @@ export default function CreateSaleInvoicePage({ onCancel, initialData }: { onCan
                                         <CommandList>
                                             <CommandEmpty>No party found.</CommandEmpty>
                                             <CommandGroup>
-                                                {parties.map(p => (
+                                                {filteredParties.map((p: any) => (
                                                     <CommandItem key={p._id} onSelect={() => { handlePartyChange(p._id); setPartyOpen(false); }}>
                                                         {p.name}
                                                     </CommandItem>

@@ -3,14 +3,15 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import CreatePurchaseOrderPage from '../component/CreatePurchaseOrderPage';
+import dynamic from 'next/dynamic';
+const CreatePurchaseOrderPage = dynamic(() => import('../component/CreatePurchaseOrderPage'), { ssr: false });
 import FilterBar from '@/app/dashboard/sales/component/FilterBar';
 import TransactionsTable from '@/app/dashboard/sales/component/TransactionsTable';
-import { fetchPurchases, cancelPurchase, fetchPurchaseById } from '@/lib/api';
+import { fetchPurchases, deletePurchase, fetchPurchaseById } from '@/lib/api';
 import { Transaction } from '@/lib/types';
 import { format } from 'date-fns';
 import { Card, CardContent } from '@/components/ui/card';
-import { InvoicePreview } from '@/app/dashboard/sales/component/InvoicePreview';
+const InvoicePreview = dynamic(() => import('@/app/dashboard/sales/component/InvoicePreview').then(m => ({ default: m.InvoicePreview })), { ssr: false });
 import { toast } from '@/components/ui/use-toast';
 
 // --- Illustration Component ---
@@ -43,6 +44,7 @@ export default function PurchaseOrderPage() {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filters, setFilters] = useState<any>({});
+    const [availableStatuses, setAvailableStatuses] = useState<string[]>([]);
     const [editingData, setEditingData] = useState<any>(null);
     const [printInvoiceData, setPrintInvoiceData] = useState<any>(null);
 
@@ -71,6 +73,9 @@ export default function PurchaseOrderPage() {
             }));
 
             setTransactions(mapped);
+            if (!filters.status) {
+                setAvailableStatuses([...new Set(mapped.map((t: any) => t.status).filter(Boolean))] as string[]);
+            }
         } catch (error) {
             console.error("Failed to load purchase orders", error);
         } finally {
@@ -84,14 +89,27 @@ export default function PurchaseOrderPage() {
         }
     }, [isCreating, filters]);
 
+    useEffect(() => {
+        const preload = () => {
+            import('../component/CreatePurchaseOrderPage');
+            import('@/app/dashboard/sales/component/InvoicePreview');
+        };
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+            const id = (window as any).requestIdleCallback(preload, { timeout: 2000 });
+            return () => (window as any).cancelIdleCallback(id);
+        } else {
+            const t = setTimeout(preload, 1000);
+            return () => clearTimeout(t);
+        }
+    }, []);
+
     const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this Purchase Order?")) return;
+        if (!confirm("Permanently delete this Purchase Order? This cannot be undone.")) return;
         try {
-            await cancelPurchase(id);
+            await deletePurchase(id);
             loadPurchases();
         } catch (error) {
-            console.error(error);
-            toast({ title: "Failed to cancel", variant: "destructive" });
+            toast({ title: "Failed to delete", variant: "destructive" });
         }
     };
 
@@ -142,7 +160,7 @@ export default function PurchaseOrderPage() {
             <Card className="shadow-sm">
                 <CardContent className="p-0 divide-y">
                     <div className="p-4 border-b flex justify-between items-center">
-                        <FilterBar onFilterChange={setFilters} />
+                        <FilterBar onFilterChange={setFilters} statusOptions={availableStatuses} />
                         <Button
                             className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white"
                             onClick={() => setIsCreating(true)}

@@ -2,14 +2,15 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Edit, MessageSquare, Clock, Search, Printer, FileSpreadsheet, MoreVertical } from 'lucide-react';
+import { Edit, MessageSquare, Clock, Search, Printer, FileSpreadsheet, MoreVertical, Eye, Trash2, XCircle, CreditCard } from 'lucide-react';
 import WhatsAppPartyModal from '@/components/dashboard/WhatsAppPartyModal';
+import dynamic from 'next/dynamic';
+import { cancelSale, cancelPurchase, deleteSale, deletePurchase } from '@/lib/api';
+import { toast } from '@/components/ui/use-toast';
 
-const dropdownMenuItems = [
-    'View/Edit', 'Cancel Invoice', 'Delete', 'Duplicate', 'Open PDF',
-    'Preview', 'Print', 'Preview As Delivery Challan', 'Convert To Return',
-    'Receive Payment', 'View History'
-];
+const InvoicePreview = dynamic(() => import('@/app/dashboard/sales/component/InvoicePreview').then(m => ({ default: m.InvoicePreview })), { ssr: false });
+const PaymentInModal = dynamic(() => import('@/app/dashboard/sales/component/PaymentInModal'), { ssr: false });
+const PaymentOutModal = dynamic(() => import('@/app/dashboard/purchases/component/CreatePaymentOutModal'), { ssr: false });
 
 export interface Transaction {
     id: string;
@@ -18,25 +19,77 @@ export interface Transaction {
     date: string;
     total: number;
     balance: number;
-    status?: string; // e.g. PAID, UNPAID
+    status?: string;
+    partyId?: string;
+    rawDate?: Date;
 }
 
 interface TransactionDetailsProps {
-    selectedParty: any; // Using any for now to hold the party object
+    selectedParty: any;
     transactionsData: Transaction[];
     onEditParty: () => void;
     onShowOptions: () => void;
+    onReload?: () => void;
 }
 
-export const TransactionDetails = ({ selectedParty, transactionsData, onEditParty, onShowOptions }: TransactionDetailsProps) => {
+const SALE_TYPES = new Set(['Sale Invoice', 'Sale Order', 'Credit Note', 'Estimate', 'Proforma Invoice', 'Delivery Challan']);
+const PURCHASE_TYPES = new Set(['Purchase Bill', 'Purchase Order', 'Debit Note', 'Fixed Asset', 'Expense']);
+const INVOICE_BILL_TYPES = new Set(['Sale Invoice', 'Purchase Bill']);
+
+export const TransactionDetails = ({ selectedParty, transactionsData, onEditParty, onShowOptions, onReload }: TransactionDetailsProps) => {
     const [openMenuIndex, setOpenMenuIndex] = useState<number | null>(null);
     const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false);
+    const [previewData, setPreviewData] = useState<any>(null);
+    const [paymentInData, setPaymentInData] = useState<{ partyId: string; amount: number; invoiceId: string } | null>(null);
+    const [paymentOutData, setPaymentOutData] = useState<{ partyId: string; amount: number; invoiceId: string } | null>(null);
 
-    const toggleMenu = (index: number) => {
-        setOpenMenuIndex(openMenuIndex === index ? null : index);
+    const totalBalance = selectedParty?.currentBalance ?? transactionsData.reduce((sum, t) => sum + (t.balance || 0), 0);
+
+    const isSale = (tx: Transaction) => SALE_TYPES.has(tx.type);
+
+    const handlePreview = (tx: Transaction) => {
+        setOpenMenuIndex(null);
+        const type = isSale(tx) ? 'INVOICE' : 'PURCHASE_BILL';
+        setPreviewData({ ...tx, _preview: true, type });
     };
 
-    const totalBalance = transactionsData.reduce((sum, t) => sum + (t.balance || 0), 0);
+    const handleDelete = async (tx: Transaction) => {
+        setOpenMenuIndex(null);
+        if (!confirm(`Permanently delete ${tx.type} #${tx.number}? This cannot be undone.`)) return;
+        try {
+            if (isSale(tx)) await deleteSale(tx.id);
+            else await deletePurchase(tx.id);
+            toast({ title: `${tx.type} deleted`, className: 'bg-green-600 text-white' });
+            onReload?.();
+        } catch (e: any) {
+            toast({ title: e.message || 'Failed to delete', variant: 'destructive' });
+        }
+    };
+
+    const handleCancel = async (tx: Transaction) => {
+        setOpenMenuIndex(null);
+        if (!confirm(`Cancel ${tx.type} #${tx.number}? It will be marked as Cancelled.`)) return;
+        try {
+            if (isSale(tx)) await cancelSale(tx.id);
+            else await cancelPurchase(tx.id);
+            toast({ title: `${tx.type} cancelled`, className: 'bg-green-600 text-white' });
+            onReload?.();
+        } catch (e: any) {
+            toast({ title: e.message || 'Failed to cancel', variant: 'destructive' });
+        }
+    };
+
+    const handleReceivePayment = (tx: Transaction) => {
+        setOpenMenuIndex(null);
+        if (!selectedParty?._id) return;
+        setPaymentInData({ partyId: selectedParty._id, amount: tx.balance, invoiceId: tx.id });
+    };
+
+    const handleMakePayment = (tx: Transaction) => {
+        setOpenMenuIndex(null);
+        if (!selectedParty?._id) return;
+        setPaymentOutData({ partyId: selectedParty._id, amount: tx.balance, invoiceId: tx.id });
+    };
 
     if (!selectedParty) {
         return (
@@ -52,6 +105,23 @@ export const TransactionDetails = ({ selectedParty, transactionsData, onEditPart
                 <div className="flex items-center gap-2">
                     <h2 className="text-xl font-bold text-gray-800">{selectedParty.name}</h2>
                     <Edit className="h-4 w-4 text-blue-600 cursor-pointer" onClick={onEditParty} />
+                </div>
+                <div className="flex items-center gap-4">
+                    <div className="text-right">
+                        <p className="text-xs text-gray-400 uppercase tracking-wide">Net Balance</p>
+                        {(() => {
+                            const isSupplier = selectedParty.partyType === 'supplier';
+                            const isReceivable = isSupplier ? totalBalance < 0 : totalBalance > 0;
+                            const label = totalBalance === 0 ? '' : isReceivable ? 'to receive' : 'to pay';
+                            const color = totalBalance === 0 ? 'text-gray-500' : isReceivable ? 'text-green-600' : 'text-red-500';
+                            return (
+                                <p className={`text-lg font-bold ${color}`}>
+                                    ₹{Math.abs(totalBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    {label && <span className="text-xs font-normal ml-1">{label}</span>}
+                                </p>
+                            );
+                        })()}
+                    </div>
                 </div>
                 <div className="flex items-center gap-3">
                     <button className="p-2 relative"><MessageSquare className="h-5 w-5 text-gray-500" /><span className="absolute top-1 right-1 h-2 w-2 bg-orange-400 rounded-full"></span></button>
@@ -79,26 +149,91 @@ export const TransactionDetails = ({ selectedParty, transactionsData, onEditPart
                         </div>
                     </div>
                 </div>
-                <div className="grid grid-cols-12 gap-4 text-xs font-medium text-gray-400 px-4 sm:px-6 py-2 border-b border-gray-200 bg-gray-50/50 flex-shrink-0">
-                    <div className="col-span-3">TYPE</div><div className="col-span-2">NUMBER</div><div className="col-span-2">DATE</div><div className="col-span-2 text-right">TOTAL</div><div className="col-span-2 text-right">BALANCE</div><div className="col-span-1 text-right"></div>
+                <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-400 px-4 sm:px-6 py-2 border-b border-gray-200 bg-gray-50/50 flex-shrink-0">
+                    <div className="col-span-3">TYPE</div><div className="col-span-2">NUMBER</div><div className="col-span-2">DATE</div><div className="col-span-1 text-center">STATUS</div><div className="col-span-2 text-right">TOTAL</div><div className="col-span-1 text-right">BALANCE</div><div className="col-span-1 text-right"></div>
                 </div>
                 <div className="text-sm overflow-y-auto flex-grow">
                     {transactionsData.length === 0 ? (
                         <div className="p-8 text-center text-gray-400">No transactions found</div>
                     ) : (
                         transactionsData.map((tx, index) => (
-                            <div key={tx.id} className="grid grid-cols-12 gap-4 items-center px-4 sm:px-6 py-4 border-b border-gray-100 last:border-b-0 hover:bg-gray-50/50 transition-colors">
-                                <div className="col-span-3 font-medium text-gray-800">{tx.type}</div>
-                                <div className="col-span-2 text-gray-600">{tx.number}</div>
-                                <div className="col-span-2 text-gray-600">{tx.date}</div>
-                                <div className="col-span-2 text-right font-semibold text-gray-800">₹{tx.total.toFixed(2)}</div>
-                                <div className="col-span-2 text-right font-semibold text-gray-800">₹{tx.balance.toFixed(2)}</div>
+                            <div key={tx.id} className="grid grid-cols-12 gap-2 items-center px-4 sm:px-6 py-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50/50 transition-colors">
+                                <div className="col-span-3 font-medium text-gray-800 text-xs leading-tight">{tx.type}</div>
+                                <div className="col-span-2 text-gray-600 text-xs">{tx.number}</div>
+                                <div className="col-span-2 text-gray-600 text-xs">{tx.date}</div>
+                                <div className="col-span-1 flex justify-center">
+                                    {tx.status && (
+                                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                                            tx.status === 'Paid' ? 'bg-green-100 text-green-700' :
+                                            tx.status === 'Unpaid' ? 'bg-red-100 text-red-600' :
+                                            tx.status === 'Partial' ? 'bg-yellow-100 text-yellow-700' :
+                                            tx.status === 'Overdue' ? 'bg-orange-100 text-orange-700' :
+                                            tx.status === 'Cancelled' ? 'bg-gray-100 text-gray-500' :
+                                            tx.status === 'OPEN' ? 'bg-blue-100 text-blue-700' :
+                                            tx.status === 'CONVERTED' ? 'bg-purple-100 text-purple-700' :
+                                            'bg-gray-100 text-gray-600'
+                                        }`}>{tx.status}</span>
+                                    )}
+                                </div>
+                                <div className="col-span-2 text-right font-semibold text-gray-800 text-xs">₹{tx.total.toFixed(2)}</div>
+                                <div className="col-span-1 text-right font-semibold text-gray-800 text-xs">₹{tx.balance.toFixed(2)}</div>
                                 <div className="col-span-1 flex justify-end relative">
-                                    <button onClick={() => toggleMenu(index)}><MoreVertical className="h-5 w-5 text-gray-500 cursor-pointer" /></button>
+                                    <button onClick={() => setOpenMenuIndex(openMenuIndex === index ? null : index)}>
+                                        <MoreVertical className="h-5 w-5 text-gray-500 cursor-pointer" />
+                                    </button>
                                     <AnimatePresence>
                                         {openMenuIndex === index && (
-                                            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="absolute top-full right-0 mt-2 w-56 bg-white rounded-lg shadow-xl z-20 py-2 border border-gray-100">
-                                                {dropdownMenuItems.map(item => (<a key={item} href="#" className="block px-4 py-2 text-gray-700 hover:bg-gray-100" onClick={() => setOpenMenuIndex(null)}>{item}</a>))}
+                                            <motion.div
+                                                initial={{ opacity: 0, y: -10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0, y: -10 }}
+                                                className="absolute top-full right-0 mt-2 w-52 bg-white rounded-lg shadow-xl z-20 py-2 border border-gray-100"
+                                            >
+                                                {/* Preview / Print */}
+                                                <button
+                                                    className="w-full flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 text-left"
+                                                    onClick={() => handlePreview(tx)}
+                                                >
+                                                    <Eye className="h-4 w-4" /> Preview / Print
+                                                </button>
+
+                                                {/* Receive Payment (sales) */}
+                                                {isSale(tx) && tx.balance > 0 && tx.status !== 'Cancelled' && (
+                                                    <button
+                                                        className="w-full flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 text-left"
+                                                        onClick={() => handleReceivePayment(tx)}
+                                                    >
+                                                        <CreditCard className="h-4 w-4 text-green-600" /> Receive Payment
+                                                    </button>
+                                                )}
+
+                                                {/* Make Payment (purchases) */}
+                                                {!isSale(tx) && tx.balance > 0 && tx.status !== 'Cancelled' && (
+                                                    <button
+                                                        className="w-full flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 text-left"
+                                                        onClick={() => handleMakePayment(tx)}
+                                                    >
+                                                        <CreditCard className="h-4 w-4 text-blue-600" /> Make Payment
+                                                    </button>
+                                                )}
+
+                                                {/* Delete — always available */}
+                                                <button
+                                                    className="w-full flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 text-left"
+                                                    onClick={() => handleDelete(tx)}
+                                                >
+                                                    <Trash2 className="h-4 w-4" /> Delete
+                                                </button>
+
+                                                {/* Cancel — only for Invoice / Bill */}
+                                                {INVOICE_BILL_TYPES.has(tx.type) && tx.status !== 'Cancelled' && (
+                                                    <button
+                                                        className="w-full flex items-center gap-2 px-4 py-2 text-orange-600 hover:bg-orange-50 text-left"
+                                                        onClick={() => handleCancel(tx)}
+                                                    >
+                                                        <XCircle className="h-4 w-4" /> Cancel
+                                                    </button>
+                                                )}
                                             </motion.div>
                                         )}
                                     </AnimatePresence>
@@ -108,6 +243,8 @@ export const TransactionDetails = ({ selectedParty, transactionsData, onEditPart
                     )}
                 </div>
             </div>
+
+            {/* Modals */}
             <WhatsAppPartyModal
                 isOpen={isWhatsAppOpen}
                 onClose={() => setIsWhatsAppOpen(false)}
@@ -119,6 +256,36 @@ export const TransactionDetails = ({ selectedParty, transactionsData, onEditPart
                         : undefined
                 }
             />
+
+            {previewData && (
+                <InvoicePreview
+                    isOpen={!!previewData}
+                    onClose={() => setPreviewData(null)}
+                    data={previewData}
+                    type={previewData.type || 'INVOICE'}
+                />
+            )}
+
+            {paymentInData && (
+                <PaymentInModal
+                    isOpen={!!paymentInData}
+                    onClose={() => { setPaymentInData(null); onReload?.(); }}
+                    onSuccess={() => { setPaymentInData(null); onReload?.(); }}
+                    initialPartyId={paymentInData.partyId}
+                    initialAmount={paymentInData.amount}
+                    initialInvoiceId={paymentInData.invoiceId}
+                />
+            )}
+
+            {paymentOutData && (
+                <PaymentOutModal
+                    isOpen={!!paymentOutData}
+                    onClose={() => { setPaymentOutData(null); onReload?.(); }}
+                    initialPartyId={paymentOutData.partyId}
+                    initialAmount={paymentOutData.amount}
+                    initialBillId={paymentOutData.invoiceId}
+                />
+            )}
         </main>
     );
 };

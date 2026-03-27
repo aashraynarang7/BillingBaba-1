@@ -53,4 +53,6 @@ const productSchema = new mongoose.Schema({
         amount: { type: Number, default: 0 }
     }]
 })
+productSchema.index({ companyId: 1 });
+
 module.exports = mongoose.model('Product', productSchema);

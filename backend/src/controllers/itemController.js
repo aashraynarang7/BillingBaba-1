@@ -135,7 +135,7 @@ exports.getItemById = async (req, res) => {
 
 exports.updateItem = async (req, res) => {
     try {
-        const { name, ...details } = req.body;
+        const { name, isHiddenFromStore, isOutOfStockOnStore, isActive, ...details } = req.body;
 
         // --- HANDLE FILE UPLOADS & MERGE ---
         const newImages = req.files && req.files.images ? req.files.images.map(f => `/uploads/${f.filename}`) : [];
@@ -171,10 +171,13 @@ exports.updateItem = async (req, res) => {
         if (!item) return res.status(404).json({ message: 'Item not found' });
 
         if (name) item.name = name;
+        if (isHiddenFromStore !== undefined) item.isHiddenFromStore = isHiddenFromStore;
+        if (isOutOfStockOnStore !== undefined) item.isOutOfStockOnStore = isOutOfStockOnStore;
+        if (isActive !== undefined) item.isActive = isActive;
 
         if (item.type === 'product' && item.product) {
             await Product.findByIdAndUpdate(item.product, details);
-            await item.save(); // Save name change
+            await item.save(); // Save name + Item-level flags
 
             // Sync Category
             if (details.category !== undefined) {
@@ -239,10 +242,9 @@ exports.deleteItem = async (req, res) => {
         const DeliveryChallan = require('../models/DeliveryChallan');
         const CreditNote = require('../models/CreditNote');
         const Purchase = require('../models/Purchase');
-        const PurchaseBill = require('../models/PurchaseBill');
         const DebitNote = require('../models/DebitNote');
 
-        const counts = await Promise.all([
+        const [c0, c1, c2, c3, c4, c5, c6, c7] = await Promise.all([
             SaleInvoice.countDocuments(txQuery),
             SaleOrder.countDocuments(txQuery),
             ProformaInvoice.countDocuments(txQuery),
@@ -250,13 +252,25 @@ exports.deleteItem = async (req, res) => {
             DeliveryChallan.countDocuments(txQuery),
             CreditNote.countDocuments(txQuery),
             Purchase.countDocuments(txQuery),
-            PurchaseBill.countDocuments(txQuery),
             DebitNote.countDocuments(txQuery),
         ]);
-        const totalUsed = counts.reduce((a, b) => a + b, 0);
+
+        const breakdown = [
+            { type: 'Sale Invoices',         count: c0 },
+            { type: 'Sale Orders',           count: c1 },
+            { type: 'Proforma Invoices',     count: c2 },
+            { type: 'Estimates',             count: c3 },
+            { type: 'Delivery Challans',     count: c4 },
+            { type: 'Credit Notes',          count: c5 },
+            { type: 'Purchase Bills/Orders', count: c6 },
+            { type: 'Debit Notes',           count: c7 },
+        ].filter(b => b.count > 0);
+
+        const totalUsed = breakdown.reduce((sum, b) => sum + b.count, 0);
         if (totalUsed > 0) {
             return res.status(400).json({
-                message: `This item cannot be deleted as it is already used in ${totalUsed} transaction(s). Please delete all related transactions before deleting this item.`
+                message: `This item is used in ${totalUsed} transaction(s) and cannot be deleted.`,
+                breakdown,
             });
         }
 

@@ -10,6 +10,29 @@ const DeliveryChallan = require('../models/DeliveryChallan');
 const CreditNote = require('../models/CreditNote');
 const JobWorkOut = require('../models/JobWorkOut');
 
+// Returns the next sequential number for a document type, always higher than the current max
+const getNextNumber = async (Model, companyId, field, extraFilter = {}) => {
+    const docs = await Model.find({ companyId, ...extraFilter }).select(field).lean();
+    let max = 0;
+    for (const d of docs) {
+        const val = d[field];
+        if (val) {
+            const n = parseInt(String(val).split('-').pop(), 10);
+            if (!isNaN(n) && n > max) max = n;
+        }
+    }
+    return max + 1;
+};
+
+// Batch-fetch Items by IDs to avoid N+1 queries inside loops
+const batchGetItems = async (itemIds, session) => {
+    if (!itemIds || itemIds.length === 0) return new Map();
+    const query = Item.find({ _id: { $in: itemIds } }).lean();
+    if (session) query.session(session);
+    const items = await query;
+    return new Map(items.map(item => [item._id.toString(), item]));
+};
+
 const calculateInvoiceStatus = (sale) => {
     // 1. Paid Check
     // Strictly rely on balanceDue. isPaid should be a result, not a cause.
@@ -69,14 +92,7 @@ const createSale = async (req, res) => {
 
             // Auto-Generate Order Number
             if (!saleData.orderNumber) {
-                const lastOrder = await SaleOrder.findOne({ companyId: saleData.companyId }).sort({ createdAt: -1 });
-                let nextNum = 1;
-                if (lastOrder && lastOrder.orderNumber) {
-                    const parts = lastOrder.orderNumber.split('-');
-                    const lastNum = parseInt(parts[parts.length - 1]);
-                    if (!isNaN(lastNum)) nextNum = lastNum + 1;
-                }
-                saleData.orderNumber = `${nextNum}`;
+                saleData.orderNumber = `${await getNextNumber(SaleOrder, saleData.companyId, 'orderNumber')}`;
             }
 
             const saleOrder = new SaleOrder(saleData);
@@ -102,14 +118,7 @@ const createSale = async (req, res) => {
             delete saleData.documentType;
 
             if (!saleData.refNo) {
-                const last = await ProformaInvoice.findOne({ companyId: saleData.companyId }).sort({ createdAt: -1 });
-                let nextNum = 1;
-                if (last && last.refNo) {
-                    const parts = last.refNo.split('-');
-                    const lastNum = parseInt(parts[parts.length - 1]);
-                    if (!isNaN(lastNum)) nextNum = lastNum + 1;
-                }
-                saleData.refNo = `${nextNum}`;
+                saleData.refNo = `${await getNextNumber(ProformaInvoice, saleData.companyId, 'refNo')}`;
             }
 
             const proforma = new ProformaInvoice(saleData);
@@ -123,14 +132,7 @@ const createSale = async (req, res) => {
             delete saleData.documentType;
 
             if (!saleData.refNo) {
-                const last = await Estimate.findOne({ companyId: saleData.companyId }).sort({ createdAt: -1 });
-                let nextNum = 1;
-                if (last && last.refNo) {
-                    const parts = last.refNo.split('-');
-                    const lastNum = parseInt(parts[parts.length - 1]);
-                    if (!isNaN(lastNum)) nextNum = lastNum + 1;
-                }
-                saleData.refNo = `${nextNum}`;
+                saleData.refNo = `${await getNextNumber(Estimate, saleData.companyId, 'refNo')}`;
             }
 
             const estimate = new Estimate(saleData);
@@ -144,14 +146,7 @@ const createSale = async (req, res) => {
             delete saleData.documentType;
 
             if (!saleData.challanNumber) {
-                const last = await DeliveryChallan.findOne({ companyId: saleData.companyId }).sort({ createdAt: -1 });
-                let nextNum = 1;
-                if (last && last.challanNumber) {
-                    const parts = last.challanNumber.split('-');
-                    const lastNum = parseInt(parts[parts.length - 1]);
-                    if (!isNaN(lastNum)) nextNum = lastNum + 1;
-                }
-                saleData.challanNumber = `${nextNum}`;
+                saleData.challanNumber = `${await getNextNumber(DeliveryChallan, saleData.companyId, 'challanNumber')}`;
             }
 
             const challan = new DeliveryChallan(saleData);
@@ -159,14 +154,20 @@ const createSale = async (req, res) => {
 
             // Effect: Decrease Stock (Goods have left)
             if (challan.items && challan.items.length > 0) {
+                const challanItemIds = challan.items.filter(i => i.itemId).map(i => i.itemId);
+                const challanItemsMap = await batchGetItems(challanItemIds, session);
+                const challanProductUpdates = {};
                 for (const lineItem of challan.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId).session(session);
+                        const itemDoc = challanItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
-                            const qty = Number(lineItem.quantity);
-                            await Product.findByIdAndUpdate(itemDoc.product, { $inc: { 'currentQuantity': -qty } }, { session });
+                            const productId = itemDoc.product.toString();
+                            challanProductUpdates[productId] = (challanProductUpdates[productId] || 0) - Number(lineItem.quantity);
                         }
                     }
+                }
+                for (const [productId, change] of Object.entries(challanProductUpdates)) {
+                    await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } }, { session });
                 }
             }
 
@@ -194,15 +195,20 @@ const createSale = async (req, res) => {
 
             // Effect 1: Increase Stock (Goods returned)
             if (creditNote.items && creditNote.items.length > 0) {
+                const cnItemIds = creditNote.items.filter(i => i.itemId).map(i => i.itemId);
+                const cnItemsMap = await batchGetItems(cnItemIds, session);
+                const cnProductUpdates = {};
                 for (const lineItem of creditNote.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId).session(session);
+                        const itemDoc = cnItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
-                            const qty = Number(lineItem.quantity);
-                            // Increase Link Stock (Sales Return increases inventory)
-                            await Product.findByIdAndUpdate(itemDoc.product, { $inc: { 'currentQuantity': qty } }, { session });
+                            const productId = itemDoc.product.toString();
+                            cnProductUpdates[productId] = (cnProductUpdates[productId] || 0) + Number(lineItem.quantity);
                         }
                     }
+                }
+                for (const [productId, change] of Object.entries(cnProductUpdates)) {
+                    await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } }, { session });
                 }
             }
 
@@ -251,14 +257,7 @@ const createSale = async (req, res) => {
 
             // Auto-Generate Invoice Number
             if (!saleData.invoiceNumber) {
-                const lastInvoice = await SaleInvoice.findOne({ companyId: saleData.companyId }).sort({ createdAt: -1 });
-                let nextNum = 1;
-                if (lastInvoice && lastInvoice.invoiceNumber) {
-                    const parts = lastInvoice.invoiceNumber.split('-');
-                    const lastNum = parseInt(parts[parts.length - 1]);
-                    if (!isNaN(lastNum)) nextNum = lastNum + 1;
-                }
-                saleData.invoiceNumber = `${nextNum}`;
+                saleData.invoiceNumber = `${await getNextNumber(SaleInvoice, saleData.companyId, 'invoiceNumber')}`;
             }
 
             const saleInvoice = new SaleInvoice({
@@ -270,7 +269,7 @@ const createSale = async (req, res) => {
             saleInvoice.status = calculateInvoiceStatus(saleInvoice);
             saleInvoice.isPaid = saleInvoice.status === 'Paid';
 
-            // Push initial payment to history if received amount is > 0
+            // Track initial payment in history only (PaymentIn is created separately via Receive Payment action)
             if (saleInvoice.receivedAmount > 0) {
                 saleInvoice.paymentHistory.push({
                     date: saleInvoice.invoiceDate || Date.now(),
@@ -278,25 +277,6 @@ const createSale = async (req, res) => {
                     paymentMode: saleInvoice.paymentMode || saleInvoice.paymentType || 'Cash',
                     notes: 'Initial Payment'
                 });
-
-                // Auto-generate PaymentIn for initial received amount
-                const lastPin = await PaymentIn.findOne({ companyId: saleInvoice.companyId }).sort({ createdAt: -1 });
-                const lastPinNum = lastPin && !isNaN(parseInt(lastPin.receiptNo)) ? parseInt(lastPin.receiptNo) : 0;
-                const defaultReceipt = `${lastPinNum + 1}`;
-                const paymentIn = new PaymentIn({
-                    companyId: saleInvoice.companyId,
-                    partyId: saleInvoice.partyId,
-                    receiptNo: defaultReceipt,
-                    date: saleInvoice.invoiceDate || Date.now(),
-                    amount: saleInvoice.receivedAmount,
-                    paymentMode: saleInvoice.paymentMode || saleInvoice.paymentType || 'Cash',
-                    description: 'Auto-generated initial payment',
-                    linkedInvoices: [{
-                        invoiceId: saleInvoice._id,
-                        amountSettled: saleInvoice.receivedAmount
-                    }]
-                });
-                await paymentIn.save({ session });
             }
 
             await saleInvoice.save({ session });
@@ -335,10 +315,14 @@ const createSale = async (req, res) => {
             const productUpdates = {}; // { productId: quantityChange }
 
             if (saleInvoice.items && saleInvoice.items.length > 0) {
+                // Batch fetch all item docs to avoid N+1 queries
+                const invoiceItemIds = saleInvoice.items.filter(i => i.itemId).map(i => i.itemId);
+                const invoiceItemsMap = await batchGetItems(invoiceItemIds, session);
+
                 // First pass: Calculate total changes per product
                 for (const lineItem of saleInvoice.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId).session(session);
+                        const itemDoc = invoiceItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
                             const qty = Number(lineItem.quantity);
                             const productId = itemDoc.product.toString();
@@ -389,8 +373,16 @@ const getSales = async (req, res) => {
         const filter = {};
         if (companyId) filter.companyId = companyId;
         if (partyId) filter.partyId = partyId;
-        // Godown filter for default
         if (req.query.godown) filter.godown = req.query.godown;
+        if (req.query.userId) {
+            if (req.query.userId === 'admin') {
+                filter.$or = [{ createdBy: { $exists: false } }, { createdBy: null }];
+            } else {
+                filter.createdBy = req.query.userId;
+            }
+        }
+        if (req.query.status && req.query.status !== 'All Status') filter.status = req.query.status;
+        if (req.query.saleMode) filter.saleMode = req.query.saleMode;
 
         // Helper to add date filter if exists
         const addDateFilter = (field) => {
@@ -406,7 +398,7 @@ const getSales = async (req, res) => {
         }
 
         const applyPaginationAndRespond = async (Model, filterToUse, populateFields = []) => {
-            let query = Model.find(filterToUse).sort(sortObj);
+            let query = Model.find(filterToUse).sort(sortObj).lean();
 
             populateFields.forEach(p => {
                 if (typeof p === 'string') query = query.populate(p, 'name phone');
@@ -439,10 +431,36 @@ const getSales = async (req, res) => {
 
         if (type === 'SO') {
             addDateFilter('orderDate');
-            return await applyPaginationAndRespond(SaleOrder, filter, [
-                { path: 'partyId', select: 'name phone' },
-                { path: 'convertedToInvoiceId', select: 'invoiceNumber' },
-            ]);
+            // Fetch orders with populated fields
+            const soQuery = SaleOrder.find(filter)
+                .populate('partyId', 'name phone')
+                .populate('convertedToInvoiceId', 'invoiceNumber')
+                .sort({ createdAt: -1 });
+            const orders = await soQuery.exec();
+
+            // Auto-repair: for CONVERTED orders missing convertedToInvoiceId, look up via reverse orderId
+            const orphaned = orders.filter(o => o.status === 'CONVERTED' && !o.convertedToInvoiceId);
+            if (orphaned.length > 0) {
+                const linkedInvoices = await SaleInvoice.find({
+                    orderId: { $in: orphaned.map(o => o._id) }
+                }).select('invoiceNumber orderId').lean();
+                const invMap = new Map(linkedInvoices.map(i => [i.orderId?.toString(), i]));
+                for (const order of orphaned) {
+                    const inv = invMap.get(order._id.toString());
+                    if (inv) {
+                        // Found the linked invoice — repair the reference
+                        order.convertedToInvoiceId = inv;
+                        SaleOrder.findByIdAndUpdate(order._id, { convertedToInvoiceId: inv._id }).exec().catch(() => {});
+                    } else {
+                        // No linked invoice found (was never set or invoice was deleted) — reset to OPEN so user can re-convert
+                        order.status = 'OPEN';
+                        order.convertedToInvoiceId = null;
+                        SaleOrder.findByIdAndUpdate(order._id, { status: 'OPEN', convertedToInvoiceId: null }).exec().catch(() => {});
+                    }
+                }
+            }
+
+            return res.json(orders);
 
         } else if (type === 'PROFORMA') {
             addDateFilter('invoiceDate');
@@ -476,13 +494,6 @@ const getSales = async (req, res) => {
             // --- SALE INVOICE (Default) ---
             addDateFilter('invoiceDate');
             if (isReturn !== undefined) filter.isReturn = isReturn === 'true';
-
-            if (req.query.userId) {
-                filter.createdBy = req.query.userId;
-            }
-            if (req.query.status && req.query.status !== 'All Status') {
-                filter.status = req.query.status;
-            }
 
             return await applyPaginationAndRespond(SaleInvoice, filter, [
                 { path: 'partyId', select: 'name phone gstin' },
@@ -584,14 +595,7 @@ const convertToInvoice = async (req, res) => {
         }
 
         if (!invoiceData.invoiceNumber) {
-            const lastInvoice = await SaleInvoice.findOne({ companyId: invoiceData.companyId }).sort({ createdAt: -1 });
-            let nextNum = 1;
-            if (lastInvoice && lastInvoice.invoiceNumber) {
-                const parts = lastInvoice.invoiceNumber.split('-');
-                const lastNum = parseInt(parts[parts.length - 1]);
-                if (!isNaN(lastNum)) nextNum = lastNum + 1;
-            }
-            invoiceData.invoiceNumber = `${nextNum}`;
+            invoiceData.invoiceNumber = `${await getNextNumber(SaleInvoice, invoiceData.companyId, 'invoiceNumber')}`;
         }
         invoiceData.invoiceDate = new Date();
 
@@ -611,13 +615,20 @@ const convertToInvoice = async (req, res) => {
         // Update Stock & Party (Copy Logic from createSale or refactor)
         // If from Delivery Challan, Stock was already reduced. Do NOT reduce again.
         if (type !== 'DELIVERY_CHALLAN' && newInvoice.items && newInvoice.items.length > 0) {
+            const convertItemIds = newInvoice.items.filter(i => i.itemId).map(i => i.itemId);
+            const convertItemsMap = await batchGetItems(convertItemIds, session);
+            const convertProductUpdates = {};
             for (const lineItem of newInvoice.items) {
                 if (lineItem.itemId) {
-                    const itemDoc = await Item.findById(lineItem.itemId).session(session);
+                    const itemDoc = convertItemsMap.get(lineItem.itemId.toString());
                     if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
-                        await Product.findByIdAndUpdate(itemDoc.product, { $inc: { 'currentQuantity': -Number(lineItem.quantity) } }, { session });
+                        const productId = itemDoc.product.toString();
+                        convertProductUpdates[productId] = (convertProductUpdates[productId] || 0) - Number(lineItem.quantity);
                     }
                 }
+            }
+            for (const [productId, change] of Object.entries(convertProductUpdates)) {
+                await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } }, { session });
             }
         }
         // Simplified Party update
@@ -700,13 +711,20 @@ const updateSale = async (req, res) => {
         if (doc) {
             // REVERT OLD STOCK
             if (doc.items && doc.items.length > 0) {
+                const revertItemIds = doc.items.filter(i => i.itemId).map(i => i.itemId);
+                const revertItemsMap = await batchGetItems(revertItemIds, null);
+                const revertProductUpdates = {};
                 for (const lineItem of doc.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId);
+                        const itemDoc = revertItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
-                            await Product.findByIdAndUpdate(itemDoc.product, { $inc: { 'currentQuantity': -(stockChangeDir) * Number(lineItem.quantity) } });
+                            const productId = itemDoc.product.toString();
+                            revertProductUpdates[productId] = (revertProductUpdates[productId] || 0) + (-(stockChangeDir) * Number(lineItem.quantity));
                         }
                     }
+                }
+                for (const [productId, change] of Object.entries(revertProductUpdates)) {
+                    await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } });
                 }
             }
 
@@ -727,13 +745,20 @@ const updateSale = async (req, res) => {
 
             // APPLY NEW STOCK
             if (doc.items && doc.items.length > 0) {
+                const applyItemIds = doc.items.filter(i => i.itemId).map(i => i.itemId);
+                const applyItemsMap = await batchGetItems(applyItemIds, null);
+                const applyProductUpdates = {};
                 for (const lineItem of doc.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId);
+                        const itemDoc = applyItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
-                            await Product.findByIdAndUpdate(itemDoc.product, { $inc: { 'currentQuantity': stockChangeDir * Number(lineItem.quantity) } });
+                            const productId = itemDoc.product.toString();
+                            applyProductUpdates[productId] = (applyProductUpdates[productId] || 0) + (stockChangeDir * Number(lineItem.quantity));
                         }
                     }
+                }
+                for (const [productId, change] of Object.entries(applyProductUpdates)) {
+                    await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } });
                 }
             }
 
@@ -769,13 +794,20 @@ const deleteSale = async (req, res) => {
         if (docToDelete) {
             // Revert Stock
             if (docToDelete.items && docToDelete.items.length > 0) {
+                const delItemIds = docToDelete.items.filter(i => i.itemId).map(i => i.itemId);
+                const delItemsMap = await batchGetItems(delItemIds, null);
+                const delProductUpdates = {};
                 for (const lineItem of docToDelete.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId);
+                        const itemDoc = delItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
-                            await Product.findByIdAndUpdate(itemDoc.product, { $inc: { 'currentQuantity': Number(lineItem.quantity) } });
+                            const productId = itemDoc.product.toString();
+                            delProductUpdates[productId] = (delProductUpdates[productId] || 0) + Number(lineItem.quantity);
                         }
                     }
+                }
+                for (const [productId, change] of Object.entries(delProductUpdates)) {
+                    await Product.findByIdAndUpdate(productId, { $inc: { 'currentQuantity': change } });
                 }
             }
 
@@ -853,13 +885,20 @@ const cancelSale = async (req, res) => {
         if (model === SaleInvoice) {
             // Invoice reduced stock on create — restore it
             if (docToCancel.items && docToCancel.items.length > 0) {
+                const cancelInvItemIds = docToCancel.items.filter(i => i.itemId).map(i => i.itemId);
+                const cancelInvItemsMap = await batchGetItems(cancelInvItemIds, session);
+                const cancelInvProductUpdates = {};
                 for (const lineItem of docToCancel.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId).session(session);
+                        const itemDoc = cancelInvItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
-                            await Product.findByIdAndUpdate(itemDoc.product, { $inc: { currentQuantity: Number(lineItem.quantity) } }, { session });
+                            const productId = itemDoc.product.toString();
+                            cancelInvProductUpdates[productId] = (cancelInvProductUpdates[productId] || 0) + Number(lineItem.quantity);
                         }
                     }
+                }
+                for (const [productId, change] of Object.entries(cancelInvProductUpdates)) {
+                    await Product.findByIdAndUpdate(productId, { $inc: { currentQuantity: change } }, { session });
                 }
             }
             // Revert Party Balance (only credit invoices affect it)
@@ -872,25 +911,39 @@ const cancelSale = async (req, res) => {
         } else if (model === DeliveryChallan) {
             // Challan reduced stock on create — restore it
             if (docToCancel.items && docToCancel.items.length > 0) {
+                const cancelChallanItemIds = docToCancel.items.filter(i => i.itemId).map(i => i.itemId);
+                const cancelChallanItemsMap = await batchGetItems(cancelChallanItemIds, session);
+                const cancelChallanProductUpdates = {};
                 for (const lineItem of docToCancel.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId).session(session);
+                        const itemDoc = cancelChallanItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
-                            await Product.findByIdAndUpdate(itemDoc.product, { $inc: { currentQuantity: Number(lineItem.quantity) } }, { session });
+                            const productId = itemDoc.product.toString();
+                            cancelChallanProductUpdates[productId] = (cancelChallanProductUpdates[productId] || 0) + Number(lineItem.quantity);
                         }
                     }
+                }
+                for (const [productId, change] of Object.entries(cancelChallanProductUpdates)) {
+                    await Product.findByIdAndUpdate(productId, { $inc: { currentQuantity: change } }, { session });
                 }
             }
         } else if (model === CreditNote) {
             // Credit Note increased stock on create (sales return) — reduce it back
             if (docToCancel.items && docToCancel.items.length > 0) {
+                const cancelCNItemIds = docToCancel.items.filter(i => i.itemId).map(i => i.itemId);
+                const cancelCNItemsMap = await batchGetItems(cancelCNItemIds, session);
+                const cancelCNProductUpdates = {};
                 for (const lineItem of docToCancel.items) {
                     if (lineItem.itemId) {
-                        const itemDoc = await Item.findById(lineItem.itemId).session(session);
+                        const itemDoc = cancelCNItemsMap.get(lineItem.itemId.toString());
                         if (itemDoc && itemDoc.type === 'product' && itemDoc.product) {
-                            await Product.findByIdAndUpdate(itemDoc.product, { $inc: { currentQuantity: -Number(lineItem.quantity) } }, { session });
+                            const productId = itemDoc.product.toString();
+                            cancelCNProductUpdates[productId] = (cancelCNProductUpdates[productId] || 0) - Number(lineItem.quantity);
                         }
                     }
+                }
+                for (const [productId, change] of Object.entries(cancelCNProductUpdates)) {
+                    await Product.findByIdAndUpdate(productId, { $inc: { currentQuantity: change } }, { session });
                 }
             }
             // Credit Note decreased party balance on create — restore it

@@ -59,4 +59,6 @@ const deliveryChallanSchema = new mongoose.Schema({
     updatedAt: { type: Date, default: Date.now }
 });
 
+deliveryChallanSchema.index({ companyId: 1, createdAt: -1 });
+
 module.exports = mongoose.model('DeliveryChallan', deliveryChallanSchema);

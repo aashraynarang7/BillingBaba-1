@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 
 // Data structure for all report items, organized into groups
 const reportItems = [
@@ -83,6 +84,22 @@ const reportItems = [
 
 export default function ReportsSidebar() {
   const pathname = usePathname();
+
+  // Preload heavy shared components used across report pages on idle
+  useEffect(() => {
+    const preload = () => {
+      import('@/components/ui/calendar');
+      import('@/components/ui/accordion');
+      import('@/app/dashboard/sales/component/TransactionsTable');
+    };
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      const id = (window as any).requestIdleCallback(preload, { timeout: 2000 });
+      return () => (window as any).cancelIdleCallback(id);
+    } else {
+      const t = setTimeout(preload, 1000);
+      return () => clearTimeout(t);
+    }
+  }, []);
 
   return (
     // Main container with scrolling enabled

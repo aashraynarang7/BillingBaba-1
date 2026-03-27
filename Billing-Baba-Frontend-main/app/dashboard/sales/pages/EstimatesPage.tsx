@@ -4,15 +4,17 @@ import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { format } from 'date-fns';
 import TransactionsTable from '../component/TransactionsTable';
-import { fetchEstimates, cancelSale } from '@/lib/api';
+import { fetchEstimates, deleteSale } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Transaction } from '@/lib/types';
-import CreateSaleInvoicePage from './CreateSaleInvoicePage';
-import CreateSaleOrderPage from './CreateSalesOrder';
-import CreateEstimatePage from './CreateEstimatePage';
 import FilterBar from '../component/FilterBar';
-import { InvoicePreview } from '../component/InvoicePreview';
 import { toast } from '@/components/ui/use-toast';
+import dynamic from 'next/dynamic';
+
+const CreateSaleInvoicePage = dynamic(() => import('./CreateSaleInvoicePage'), { ssr: false });
+const CreateSaleOrderPage = dynamic(() => import('./CreateSalesOrder'), { ssr: false });
+const CreateEstimatePage = dynamic(() => import('./CreateEstimatePage'), { ssr: false });
+const InvoicePreview = dynamic(() => import('../component/InvoicePreview').then(m => ({ default: m.InvoicePreview })), { ssr: false });
 
 // Illustration
 const EstimateIllustration = () => (
@@ -56,6 +58,7 @@ export default function EstimatesPage() {
 
     // Filters
     const [filters, setFilters] = useState<any>({});
+    const [availableStatuses, setAvailableStatuses] = useState<string[]>([]);
 
     const loadData = async () => {
         try {
@@ -77,6 +80,9 @@ export default function EstimatesPage() {
                     ? `Order #${doc.convertedToOrderId.orderNumber}` : undefined,
             }));
             setEstimates(mapped);
+            if (!filters.status) {
+                setAvailableStatuses([...new Set(mapped.map((t: any) => t.status).filter(Boolean))] as string[]);
+            }
         } catch (error) {
             console.error("Failed to load estimates", error);
         }
@@ -88,19 +94,34 @@ export default function EstimatesPage() {
         }
     }, [isCreating, editingDoc, convertingDoc, convertingToOrderDoc, filters]);
 
+    useEffect(() => {
+        const preload = () => {
+            import('./CreateSaleInvoicePage');
+            import('./CreateSalesOrder');
+            import('./CreateEstimatePage');
+            import('../component/InvoicePreview');
+        };
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+            const id = (window as any).requestIdleCallback(preload, { timeout: 2000 });
+            return () => (window as any).cancelIdleCallback(id);
+        } else {
+            const t = setTimeout(preload, 1000);
+            return () => clearTimeout(t);
+        }
+    }, []);
+
     const handleEdit = (id: string) => {
         const doc = fullDocs.find(d => d._id === id);
         if (doc) setEditingDoc(doc);
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this Estimate?")) return;
+        if (!confirm("Permanently delete this Estimate? This cannot be undone.")) return;
         try {
-            await cancelSale(id);
+            await deleteSale(id);
             loadData();
         } catch (error) {
-            console.error("Delete failed", error);
-            toast({ title: "Failed to cancel", variant: "destructive" });
+            toast({ title: "Failed to delete", variant: "destructive" });
         }
     };
 
@@ -170,7 +191,7 @@ export default function EstimatesPage() {
                 {(estimates.length > 0 || Object.keys(filters).length > 0) ? (
                     <div>
                         <div className="flex justify-between items-center mb-4">
-                            <FilterBar onFilterChange={setFilters} />
+                            <FilterBar onFilterChange={setFilters} statusOptions={availableStatuses} />
                             <Button
                                 className="bg-purple-600 hover:bg-purple-700 text-white"
                                 onClick={() => setIsCreating(true)}

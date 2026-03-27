@@ -90,4 +90,7 @@ const partySchema = new mongoose.Schema({
     }
 });
 
+partySchema.index({ companyId: 1 });
+partySchema.index({ companyId: 1, partyType: 1 });
+
 module.exports = mongoose.model('Party', partySchema);

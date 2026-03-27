@@ -265,3 +265,66 @@ exports.getPartyTransactions = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+// Bulk import parties from parsed Excel data
+exports.bulkImportParties = async (req, res) => {
+    try {
+        const { companyId, parties } = req.body;
+        if (!companyId) return res.status(400).json({ error: 'companyId is required' });
+        if (!parties || !Array.isArray(parties) || parties.length === 0) {
+            return res.status(400).json({ error: 'parties array is required and must not be empty' });
+        }
+
+        const results = { created: 0, errors: [] };
+
+        for (let i = 0; i < parties.length; i++) {
+            const row = parties[i];
+            try {
+                if (!row.name || !row.name.trim()) {
+                    results.errors.push({ row: i + 1, error: 'Name is required' });
+                    continue;
+                }
+
+                const partyData = {
+                    companyId,
+                    name: row.name.trim(),
+                    phone: row.phone || '',
+                    email: row.email || '',
+                    billingAddress: row.billingAddress || '',
+                    openingBalance: Number(row.openingBalance) || 0,
+                    currentBalance: Number(row.openingBalance) || 0,
+                    gstin: row.gstin || '',
+                    partyGroup: row.partyGroup || 'General',
+                    shippingAddress: row.shippingAddress || '',
+                    partyType: (Number(row.openingBalance) || 0) < 0 ? 'supplier' : 'customer',
+                };
+
+                if (row.asOfDate) {
+                    // Parse dd/MM/yyyy format
+                    const parts = String(row.asOfDate).split('/');
+                    if (parts.length === 3) {
+                        partyData.asOfDate = new Date(parts[2], parts[1] - 1, parts[0]);
+                    }
+                }
+
+                // Validate GST if provided
+                try {
+                    validateAndProcessGst(partyData);
+                } catch (e) {
+                    // Skip GST validation errors, just clear the invalid GSTIN
+                    partyData.gstin = '';
+                }
+
+                const party = new Party(partyData);
+                await party.save();
+                results.created++;
+            } catch (err) {
+                results.errors.push({ row: i + 1, name: row.name, error: err.message });
+            }
+        }
+
+        res.status(201).json(results);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};

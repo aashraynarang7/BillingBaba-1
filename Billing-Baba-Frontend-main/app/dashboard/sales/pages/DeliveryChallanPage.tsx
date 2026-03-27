@@ -3,14 +3,16 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import CreateDeliveryChallanPage from '../component/CreateDeliveryChallanPage';
 import TransactionsTable from '../component/TransactionsTable';
-import { fetchSales, cancelSale } from '@/lib/api';
+import { fetchSales, deleteSale, fetchSaleById } from '@/lib/api';
 import { format } from 'date-fns';
 import { Transaction } from '@/lib/types';
 import FilterBar from '../component/FilterBar';
-import { InvoicePreview } from '../component/InvoicePreview';
 import { toast } from '@/components/ui/use-toast';
+import dynamic from 'next/dynamic';
+
+const CreateDeliveryChallanPage = dynamic(() => import('../component/CreateDeliveryChallanPage'), { ssr: false });
+const InvoicePreview = dynamic(() => import('../component/InvoicePreview').then(m => ({ default: m.InvoicePreview })), { ssr: false });
 
 const DeliveryChallanIllustration = () => (
     <div className="relative mb-8 flex h-40 w-40 items-center justify-center">
@@ -42,6 +44,8 @@ export default function DeliveryChallanPage() {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filters, setFilters] = useState<any>({});
+    const [availableStatuses, setAvailableStatuses] = useState<string[]>([]);
+    const [editingData, setEditingData] = useState<any>(null);
     const [printInvoiceData, setPrintInvoiceData] = useState<any>(null);
 
     const loadChallans = async () => {
@@ -61,6 +65,9 @@ export default function DeliveryChallanPage() {
                 status: item.status || 'OPEN'
             }));
             setTransactions(mapped);
+            if (!filters.status) {
+                setAvailableStatuses([...new Set(mapped.map((t: any) => t.status).filter(Boolean))] as string[]);
+            }
         } catch (error) {
             console.error("Failed to fetch challans", error);
         } finally {
@@ -87,19 +94,38 @@ export default function DeliveryChallanPage() {
         }
     }, [isCreatingChallan, filters]);
 
+    useEffect(() => {
+        const preload = () => {
+            import('../component/CreateDeliveryChallanPage');
+            import('../component/InvoicePreview');
+        };
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+            const id = (window as any).requestIdleCallback(preload, { timeout: 2000 });
+            return () => (window as any).cancelIdleCallback(id);
+        } else {
+            const t = setTimeout(preload, 1000);
+            return () => clearTimeout(t);
+        }
+    }, []);
+
     const handleDelete = async (id: string) => {
-        if (!confirm("Are you sure you want to delete this challan?")) return;
+        if (!confirm("Permanently delete this challan? This cannot be undone.")) return;
         try {
-            await cancelSale(id);
+            await deleteSale(id);
             loadChallans();
         } catch (error) {
-            console.error("Failed to delete", error);
             toast({ title: "Failed to delete challan", variant: "destructive" });
         }
     };
 
-    const handleEdit = (id: string) => {
-        setIsCreatingChallan(true);
+    const handleEdit = async (id: string) => {
+        try {
+            const data = await fetchSaleById(id);
+            setEditingData(data);
+            setIsCreatingChallan(true);
+        } catch (error) {
+            toast({ title: "Failed to load challan for editing.", variant: "destructive" });
+        }
     };
 
     const handlePrint = (id: string) => {
@@ -107,16 +133,24 @@ export default function DeliveryChallanPage() {
         if (t) setPrintInvoiceData(t);
     };
 
-    const handleDuplicate = (id: string) => {
-        // Opens a new blank challan form (CreateDeliveryChallanPage doesn't support initialData yet)
-        setIsCreatingChallan(true);
+    const handleDuplicate = async (id: string) => {
+        try {
+            const data = await fetchSaleById(id);
+            setEditingData({ ...data, _id: undefined, challanNumber: '', challanDate: new Date() });
+            setIsCreatingChallan(true);
+        } catch (error) {
+            toast({ title: "Failed to load challan for duplication.", variant: "destructive" });
+        }
     };
 
     if (isCreatingChallan) {
         return (
             <div className="w-full bg-slate-50 p-4 sm:p-6 lg:p-8 min-h-screen">
-                <h1 className="text-2xl font-bold text-gray-800 mb-6">Create Delivery Challan</h1>
-                <CreateDeliveryChallanPage onCancel={() => setIsCreatingChallan(false)} />
+                <h1 className="text-2xl font-bold text-gray-800 mb-6">{editingData ? 'Edit Delivery Challan' : 'Create Delivery Challan'}</h1>
+                <CreateDeliveryChallanPage
+                    onCancel={() => { setIsCreatingChallan(false); setEditingData(null); }}
+                    initialData={editingData}
+                />
             </div>
         );
     }
@@ -128,7 +162,7 @@ export default function DeliveryChallanPage() {
             {transactions.length > 0 ? (
                 <>
                     <div className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm">
-                        <FilterBar onFilterChange={setFilters} />
+                        <FilterBar onFilterChange={setFilters} statusOptions={availableStatuses} />
                         <Button
                             className="bg-[var(--accent-orange)] hover:bg-[var(--primary-red)] text-white"
                             onClick={() => setIsCreatingChallan(true)}
