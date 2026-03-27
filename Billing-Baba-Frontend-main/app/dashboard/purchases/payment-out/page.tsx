@@ -9,7 +9,6 @@ import CreatePaymentOutModal from '../component/CreatePaymentOutModal';
 import PaymentOutSettings from '../component/PaymentOutSettings';
 import { fetchPaymentOut, deletePaymentOut } from '@/lib/api';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
-import { toast } from '@/components/ui/use-toast';
 
 function getStatus(payment: any): 'Used' | 'Unused' {
     const linked = payment.linkedPurchases || [];
