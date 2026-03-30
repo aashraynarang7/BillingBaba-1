@@ -1,11 +1,21 @@
-// components/items/ImportItemsPage.tsx
+"use client";
+
 import { useState } from 'react';
 import { Barcode, FileSpreadsheet, Library } from 'lucide-react';
+import dynamic from 'next/dynamic';
+
+const BarcodeScannerImport = dynamic(() => import('./BarcodeScannerImport'), { ssr: false });
 
 type ImportMethod = 'barcode' | 'excel' | 'library';
 
 const ImportItemsPage = () => {
     const [selectedMethod, setSelectedMethod] = useState<ImportMethod>('barcode');
+    const [activeFlow, setActiveFlow] = useState<ImportMethod | null>(null);
+
+    // If user clicked Continue on barcode, show the scanner
+    if (activeFlow === 'barcode') {
+        return <BarcodeScannerImport onBack={() => setActiveFlow(null)} />;
+    }
 
     const OptionCard = ({
         method,
@@ -61,16 +71,16 @@ const ImportItemsPage = () => {
                     <h2 className="text-2xl font-bold text-center text-gray-900 mb-8">
                         Select Import Method
                     </h2>
-                    
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <OptionCard
                             method="barcode"
                             title="Import From Barcode"
-                            description="Import item details by scanning barcodes. Billing Baba uses a library of 100 Mn+ standard barcodes to fetch all details of your items in seconds."
+                            description="Import item details by scanning barcodes. BillingBaba uses a library of 100 Mn+ standard barcodes to fetch all details of your items in seconds."
                             icon={<Barcode size={48} strokeWidth={1.5} />}
                             isRecommended
                         />
-                         <OptionCard
+                        <OptionCard
                             method="excel"
                             title="Import From Excel"
                             description="Import item data from excel files in your system"
@@ -90,24 +100,27 @@ const ImportItemsPage = () => {
                             selectedMethod === 'library' ? 'border-[var(--secondary-blue)] shadow-lg' : 'border-gray-200 hover:border-gray-300'
                         }`}
                     >
-                         <div className="flex items-center gap-4">
-                            <div className="text-[var(--secondary-blue)]"><Library size={32} strokeWidth={1.5}/></div>
+                        <div className="flex items-center gap-4">
+                            <div className="text-[var(--secondary-blue)]"><Library size={32} strokeWidth={1.5} /></div>
                             <div>
-                                <h3 className="text-lg font-bold text-gray-800">Import From Billing Baba Library</h3>
-                                <p className="text-sm text-gray-500">Import items from Billing Baba's database</p>
+                                <h3 className="text-lg font-bold text-gray-800">Import From BillingBaba Library</h3>
+                                <p className="text-sm text-gray-500">Import items from BillingBaba's database</p>
                             </div>
-                         </div>
-                         <div className={`w-5 h-5 rounded-full border-2 ${selectedMethod === 'library' ? 'border-[var(--secondary-blue)]' : 'border-gray-300'} flex items-center justify-center flex-shrink-0`}>
+                        </div>
+                        <div className={`w-5 h-5 rounded-full border-2 ${selectedMethod === 'library' ? 'border-[var(--secondary-blue)]' : 'border-gray-300'} flex items-center justify-center flex-shrink-0`}>
                             {selectedMethod === 'library' && <div className="w-2.5 h-2.5 bg-[var(--secondary-blue)] rounded-full"></div>}
                         </div>
                     </div>
                 </div>
             </main>
 
-             {/* Footer Button */}
-             <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4">
+            {/* Footer Button */}
+            <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4">
                 <div className="max-w-6xl mx-auto flex justify-end">
-                    <button className="bg-[var(--accent-red)] text-white font-bold py-3 px-10 rounded-full shadow-lg hover:opacity-90 transition-opacity duration-200">
+                    <button
+                        onClick={() => setActiveFlow(selectedMethod)}
+                        className="bg-[var(--accent-red)] text-white font-bold py-3 px-10 rounded-full shadow-lg hover:opacity-90 transition-opacity duration-200"
+                    >
                         Continue
                     </button>
                 </div>

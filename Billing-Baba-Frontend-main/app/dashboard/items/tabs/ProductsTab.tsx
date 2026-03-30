@@ -12,6 +12,7 @@ import {
   Trash2,
   Hash,
   AlertTriangle,
+  Settings,
 } from 'lucide-react';
 import { fetchItems, deleteItem, fetchTransactionsByItem, bulkAssignCode } from '@/lib/api';
 import {
@@ -27,6 +28,7 @@ import {
 import dynamic from 'next/dynamic';
 
 const AdjustItem = dynamic(() => import('../component/AdjustItem'), { ssr: false });
+const ItemSettingsSlideOver = dynamic(() => import('../component/ItemSettingsSlideOver'), { ssr: false });
 const AddItemModal = dynamic(() => import('../component/AddItemModal'), { ssr: false });
 const BulkUpdateItemsPage = dynamic(() => import('../component/BulkUpdateItemsPage'), { ssr: false });
 const BulkInactiveModal = dynamic(() => import('../component/BulkInactiveModal'), { ssr: false });
@@ -53,6 +55,8 @@ const ProductsTab = () => {
   const [isBulkInactiveOpen, setIsBulkInactiveOpen] = useState(false);
   const [isBulkActiveOpen, setIsBulkActiveOpen] = useState(false);
   const [isBulkAssignCodeOpen, setIsBulkAssignCodeOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Delete confirmation / validation error dialog
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; itemId: string; itemName: string }>({ open: false, itemId: '', itemName: '' });
@@ -154,6 +158,12 @@ const ProductsTab = () => {
     }
   };
 
+  const filteredItems = items.filter(item =>
+    item.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    item.product?.itemCode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    item.hsn?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   const getStockQty = (item: any) => {
     if (item.type === 'product' && item.product) {
       return item.product.currentQuantity || 0;
@@ -180,9 +190,24 @@ const ProductsTab = () => {
         <div className="w-full lg:w-1/4 border-b lg:border-b-0 lg:border-r border-gray-200 bg-white flex flex-col">
 
           <div className="p-3 border-b border-gray-200">
-            <div className="relative w-full">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input type="text" placeholder="Search..." className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--secondary-blue)]" />
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                <input
+                  type="text"
+                  placeholder="Search items..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--secondary-blue)]"
+                />
+              </div>
+              <button
+                onClick={() => setIsSettingsOpen(true)}
+                className="p-2 border border-gray-300 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-800 flex-shrink-0"
+                title="Item Settings"
+              >
+                <Settings size={18} />
+              </button>
             </div>
           </div>
 
@@ -271,7 +296,7 @@ const ProductsTab = () => {
               <div className="flex items-center">QUANTITY <Filter size={12} className="ml-1" /></div>
             </div>
             <ul>
-              {items.map(item => (
+              {filteredItems.map(item => (
                 <li key={item._id} className={`${selectedItem && selectedItem._id === item._id ? 'bg-blue-50 border-l-4 border-[var(--secondary-blue)]' : 'border-l-4 border-transparent hover:bg-gray-50'}`}>
                   <div
                     className="flex justify-between items-center px-4 py-3 cursor-pointer"
@@ -337,8 +362,10 @@ const ProductsTab = () => {
                   </div>
                 </li>
               ))}
-              {items.length === 0 && !loading && (
-                <li className="p-4 text-center text-gray-500 text-sm">No items found</li>
+              {filteredItems.length === 0 && !loading && (
+                <li className="p-4 text-center text-gray-500 text-sm">
+                  {searchQuery ? `No items match "${searchQuery}"` : 'No items found'}
+                </li>
               )}
             </ul>
           </div>
@@ -548,6 +575,11 @@ const ProductsTab = () => {
         isOpen={isBulkAssignCodeOpen}
         onClose={() => setIsBulkAssignCodeOpen(false)}
         onSuccess={loadItems}
+      />
+
+      <ItemSettingsSlideOver
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
       />
     </>
   );

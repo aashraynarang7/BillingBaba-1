@@ -50,6 +50,7 @@
         "framer-motion": "^12.23.12",
         "geist": "latest",
         "html2canvas": "^1.4.1",
+        "html5-qrcode": "^2.3.8",
         "input-otp": "1.4.1",
         "jspdf": "^4.0.0",
         "lucide-react": "^0.454.0",

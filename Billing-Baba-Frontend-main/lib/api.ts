@@ -937,4 +937,30 @@ export const movePartyToGroup = async (partyId: string, groupName: string) => {
     return res.json();
 };
 
+// ─── Item Settings ────────────────────────────────────────────────────────────
 
+export const fetchItemSettings = async () => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    const res = await fetch(`${API_BASE_URL}/item-settings?companyId=${companyId}`, { headers: getHeaders() });
+    if (!res.ok) throw new Error('Failed to fetch item settings');
+    return res.json();
+};
+
+export const updateItemSettings = async (data: Record<string, any>) => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    const res = await fetch(`${API_BASE_URL}/item-settings?companyId=${companyId}`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to update item settings');
+    return res.json();
+};
+
+// ─── Barcode Lookup ───────────────────────────────────────────────────────────
+
+export const lookupBarcode = async (code: string) => {
+    const res = await fetch(`${API_BASE_URL}/barcode/lookup/${encodeURIComponent(code)}`, { headers: getHeaders() });
+    if (!res.ok) throw new Error('Barcode lookup failed');
+    return res.json();
+};

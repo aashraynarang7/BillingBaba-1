@@ -57,6 +57,8 @@ app.use('/api/whatsapp', require('./src/routes/whatsappRoutes'));
 app.use('/api/online-store', require('./src/routes/onlineStoreRoutes'));
 app.use('/api/settings', require('./src/routes/settingsRoutes'));
 app.use('/api/party-groups', require('./src/routes/partyGroupRoutes'));
+app.use('/api/item-settings', require('./src/routes/itemSettingsRoutes'));
+app.use('/api/barcode', require('./src/routes/barcodeRoutes'));
 
 // Start Server
 app.listen(PORT, () => {
