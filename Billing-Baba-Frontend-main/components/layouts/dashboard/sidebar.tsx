@@ -32,6 +32,7 @@ import {
   LogOut,
 } from "lucide-react";
 import SearchModal from "./SearchModal";
+import { useRole } from "@/components/providers/RoleContext";
 import { useRouter } from "next/navigation";
 import {
   DropdownMenu,
@@ -175,6 +176,7 @@ export default function Sidebar({ isMobileMenuOpen }: SidebarProps) {
   const searchParams = useSearchParams();
   const currentView = searchParams.get("view");
   const router = useRouter();
+  const { can, isOwner } = useRole();
 
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(true);
@@ -184,15 +186,70 @@ export default function Sidebar({ isMobileMenuOpen }: SidebarProps) {
   const isMobile = size.width ? size.width < 768 : false;
   const { settings } = useSettings();
 
-  // Filter menu items based on settings
+  // Map each top-level menu item name to its permission key
+  const MENU_PERMISSION: Record<string, string> = {
+    "Sale": "sale",
+    "Cash & Bank": "cashBank",
+    "Reports": "reports",
+    "Settings": "settings",
+  };
+
+  // Map purchase sub-items to individual permission keys
+  const PURCHASE_SUB_PERMISSION: Record<string, string> = {
+    "Purchase Bills": "purchaseBills",
+    "Payment-Out": "paymentOut",
+    "Expenses": "expense",
+    "Purchase Order": "purchaseOrders",
+    "Purchase Return/ Dr. Note": "debitNote",
+    "Purchase FA": "purchase",
+  };
+
+  // Map sale sub-items to individual permission keys
+  const SALE_SUB_PERMISSION: Record<string, string> = {
+    "Sale Invoices": "sale",
+    "Estimate/ Quotation": "estimate",
+    "Proforma Invoice": "sale",
+    "Payment-In": "paymentIn",
+    "Sale Order": "sale",
+    "Delivery Challan": "deliveryChallan",
+    "Job Work Out": "sale",
+    "Sale Return/ Credit Note": "creditNote",
+    "Billing Baba POS": "sale",
+  };
+
+  // Filter menu items based on settings and role permissions
   const visibleMenuItems = useMemo(() =>
-    menuItems.map(item => ({
-      ...item,
-      subItems: item.subItems?.filter(sub =>
-        !sub.settingKey || settings[sub.settingKey] !== false
-      ),
-    })),
-    [settings]
+    menuItems
+      .filter(item => {
+        // Sync, Share & Backup — owner only
+        if (item.name === "Sync, Share & Backup") return isOwner;
+        // Grow Your Business — owner + salesman/biller/stockkeeper (not CA)
+        if (item.name === "Grow Your Business") return isOwner || can("grows");
+        // Settings — owner + CA/accountant
+        if (item.name === "Settings") return isOwner || can("settings");
+        // Purchase & Expense — show if user has access to any purchase sub-item
+        if (item.name === "Purchase & Expense") return can("purchase") || can("expense");
+        const permKey = MENU_PERMISSION[item.name];
+        if (permKey) return can(permKey);
+        return true; // Home, Parties, Items, Utilities — always visible
+      })
+      .map(item => ({
+        ...item,
+        subItems: item.subItems
+          ?.filter(sub => !sub.settingKey || settings[sub.settingKey] !== false)
+          .filter(sub => {
+            if (item.name === "Sale") {
+              const pk = SALE_SUB_PERMISSION[sub.name];
+              return pk ? can(pk) : true;
+            }
+            if (item.name === "Purchase & Expense") {
+              const pk = PURCHASE_SUB_PERMISSION[sub.name];
+              return pk ? can(pk) : can("purchase");
+            }
+            return true;
+          }),
+      })),
+    [settings, isOwner, can]
   );
 
   useEffect(() => {

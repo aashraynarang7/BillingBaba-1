@@ -374,10 +374,11 @@ export default function CreateSaleInvoicePage({ onCancel, initialData }: { onCan
 
     const handleSave = async () => {
         const formData = new FormData();
-        if (companies[0]?._id) {
-            formData.append('companyId', companies[0]._id);
-        } else if (initialData?.companyId) {
-            formData.append('companyId', typeof initialData.companyId === 'string' ? initialData.companyId : initialData.companyId._id);
+        const activeCompanyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : null;
+        const companyId = activeCompanyId || companies[0]?._id
+            || (initialData?.companyId ? (typeof initialData.companyId === 'string' ? initialData.companyId : initialData.companyId._id) : null);
+        if (companyId) {
+            formData.append('companyId', companyId);
         }
         if (selectedPartyId) formData.append('partyId', selectedPartyId);
         formData.append('partyName', selectedPartyId ? parties.find(p => p._id === selectedPartyId)?.name : "Cash Sale");

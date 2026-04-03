@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { usePathname } from "next/navigation";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { SettingsProvider } from "@/components/providers/SettingsContext";
+import { RoleProvider } from "@/components/providers/RoleContext";
 
 const SidebarSkeleton = () => {
   return (
@@ -40,6 +41,7 @@ export default function DashboardLayout({
   return (
     <QueryProvider>
     <SettingsProvider>
+    <RoleProvider>
     <div className="flex h-screen w-full bg-background overflow-hidden">
       {!hideSidebarAndHeader && (
         <Suspense fallback={<SidebarSkeleton />}>
@@ -66,6 +68,7 @@ export default function DashboardLayout({
         </main>
       </div>
     </div>
+    </RoleProvider>
     </SettingsProvider>
     </QueryProvider>
   )

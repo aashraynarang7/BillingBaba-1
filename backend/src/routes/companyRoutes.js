@@ -12,6 +12,7 @@ const uploadFields = upload.fields([
 
 router.post('/', authMiddleware, uploadFields, companyController.createCompany);
 router.get('/', authMiddleware, companyController.getCompanies);
+router.get('/shared', authMiddleware, companyController.getSharedCompanies);
 router.get('/:id', authMiddleware, companyController.getCompanyById);
 router.put('/:id', authMiddleware, uploadFields, companyController.updateCompany);
 router.delete('/:id', authMiddleware, companyController.deleteCompany);

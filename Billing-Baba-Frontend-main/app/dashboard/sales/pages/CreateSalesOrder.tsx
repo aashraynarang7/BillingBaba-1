@@ -268,14 +268,16 @@ export default function CreateSaleOrderPage({ onCancel, initialData }: { onCance
     const totalAmount = subTotal + Number(effectiveRoundOff);
 
     const handleSave = async () => {
-        if (!companies.length) {
+        const activeCompanyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : null;
+        const companyId = activeCompanyId || companies[0]?._id;
+        if (!companyId) {
             toast({ title: "No company found. Please create a company first.", variant: "destructive" });
             return;
         }
 
         // Payload creation
         const formData = new FormData();
-        formData.append('companyId', companies[0]?._id);
+        formData.append('companyId', companyId);
         if (selectedPartyId) formData.append('partyId', selectedPartyId);
         formData.append('partyName', selectedPartyId ? parties.find(p => p._id === selectedPartyId)?.name : "Cash Sale");
         formData.append('phone', selectedPhone);

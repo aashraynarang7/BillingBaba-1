@@ -116,6 +116,11 @@ export default function StockDetailPage() {
         return map.get(name)!;
       };
 
+      // Opening stock counts as Qty In
+      for (const row of map.values()) {
+        row.qtyIn += row.beginningQty;
+      }
+
       // Purchase bills → Qty In, Purchase Amount
       for (const doc of bills) {
         if (doc.status === "Cancelled") continue;

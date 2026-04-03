@@ -1,8 +1,8 @@
-// app/dashboard/reports/trial-balance/page.tsx
 "use client";
 
 import * as React from "react";
-import { useState, useMemo } from "react"; // useMemo को import करें
+import { useState, useMemo, useEffect } from "react";
+import { fetchReport } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -25,7 +25,7 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Calendar as CalendarIcon, ChevronDown, ChevronUp } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 
 type ReportItem = {
@@ -36,59 +36,6 @@ type ReportItem = {
   children?: ReportItem[];
 };
 
-const trialBalanceData: ReportItem[] = [
-  {
-    id: "assets",
-    name: "Assets",
-    children: [
-      { id: "fixed-assets", name: "Fixed Assets", debit: 500000 },
-      { id: "non-current-assets", name: "Non Current Assets", debit: 75000 },
-      {
-        id: "current-assets",
-        name: "Current Assets",
-        children: [
-          { id: "sundry-debtors", name: "Sundry Debtors", debit: 125000 },
-          { id: "input-duties", name: "Input Duties & Taxes", debit: 15000 },
-          { id: "bank-accounts", name: "Bank Accounts", debit: 250000 },
-          { id: "cash-accounts", name: "Cash Accounts", debit: 45000 },
-          {
-            id: "other-current-assets",
-            name: "Other Current Assets",
-            debit: 5000,
-          },
-        ],
-      },
-      { id: "other-assets", name: "Other Assets", debit: 2000 },
-    ],
-  },
-  {
-    id: "incomes",
-    name: "Incomes",
-    children: [
-      { id: "sale-accounts", name: "Sale Accounts", credit: 950000 },
-      {
-        id: "other-incomes-direct",
-        name: "Other Incomes (Direct)",
-        credit: 12000,
-      },
-      {
-        id: "other-incomes-indirect",
-        name: "Other Incomes (Indirect)",
-        credit: 5000,
-      },
-    ],
-  },
-  {
-    id: "expenses",
-    name: "Expenses",
-    children: [
-      { id: "purchase-accounts", name: "Purchase Accounts", debit: 350000 },
-      { id: "direct-expenses", name: "Direct Expenses", debit: 45000 },
-      { id: "indirect-expenses", name: "Indirect Expenses", debit: 65000 },
-    ],
-  },
-];
-
 const formatCurrency = (value?: number) => {
   if (value === undefined || value === 0) return "--";
   return value.toLocaleString("en-IN", {
@@ -97,7 +44,7 @@ const formatCurrency = (value?: number) => {
   });
 };
 
-// --- रिकर्सिव रो कंपोनेंट (अब डेटा दिखाएगा) ---
+// --- Recursive row component ---
 const ReportRow: React.FC<{
   item: ReportItem;
   level: number;
@@ -154,12 +101,44 @@ const ReportRow: React.FC<{
 
 export default function TrialBalanceReportPage() {
   const [fromDate, setFromDate] = useState<Date | undefined>(
-    new Date(2025, 3, 1)
+    new Date(new Date().getFullYear(), 3, 1)
   );
-  const [toDate, setToDate] = useState<Date | undefined>(new Date(2025, 8, 6));
+  const [toDate, setToDate] = useState<Date | undefined>(new Date());
   const [openItems, setOpenItems] = useState<Set<string>>(
     new Set(["assets", "current-assets", "incomes", "expenses"])
   );
+  const [trialBalanceData, setTrialBalanceData] = useState<ReportItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [footerTotalsFromApi, setFooterTotalsFromApi] = useState({ debit: 0, credit: 0 });
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const filters: Record<string, string> = {};
+      if (fromDate) filters.startDate = format(fromDate, "yyyy-MM-dd");
+      if (toDate) filters.endDate = format(toDate, "yyyy-MM-dd");
+      const data = await fetchReport("trial-balance", filters);
+
+      // Build tree from API response
+      const items: ReportItem[] = [];
+      if (data.assets) items.push({ id: "assets", name: "Assets", children: data.assets });
+      if (data.incomes) items.push({ id: "incomes", name: "Incomes", children: data.incomes });
+      if (data.expenses) items.push({ id: "expenses", name: "Expenses", children: data.expenses });
+      if (data.liabilities) items.push({ id: "liabilities", name: "Liabilities", children: data.liabilities });
+
+      setTrialBalanceData(items);
+      if (data.totals) {
+        setFooterTotalsFromApi({ debit: data.totals.totalDebit || 0, credit: data.totals.totalCredit || 0 });
+      }
+    } catch (error) {
+      console.error("Error fetching trial balance:", error);
+      setTrialBalanceData([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadData(); }, [fromDate, toDate]);
 
   const processedData = useMemo(() => {
     const calculateTotals = (items: ReportItem[]): ReportItem[] => {
@@ -167,6 +146,7 @@ export default function TrialBalanceReportPage() {
         if (!item.children || item.children.length === 0) {
           return {
             ...item,
+            id: item.id || item.name,
             debit: item.debit || 0,
             credit: item.credit || 0,
           };
@@ -185,6 +165,7 @@ export default function TrialBalanceReportPage() {
 
         return {
           ...item,
+          id: item.id || item.name,
           debit: totalDebit,
           credit: totalCredit,
           children: processedChildren,
@@ -192,10 +173,10 @@ export default function TrialBalanceReportPage() {
       });
     };
     return calculateTotals(trialBalanceData);
-  }, []); // यह सिर्फ एक बार कैलकुलेट होगा
+  }, [trialBalanceData]);
 
-  // फुटर के लिए टोटल कैलकुलेट करें
   const footerTotals = useMemo(() => {
+    if (footerTotalsFromApi.debit || footerTotalsFromApi.credit) return footerTotalsFromApi;
     return processedData.reduce(
       (totals, item) => {
         totals.debit += item.debit || 0;
@@ -204,7 +185,7 @@ export default function TrialBalanceReportPage() {
       },
       { debit: 0, credit: 0 }
     );
-  }, [processedData]);
+  }, [processedData, footerTotalsFromApi]);
 
   const toggleItem = (id: string) => {
     setOpenItems((prev) => {
@@ -221,7 +202,7 @@ export default function TrialBalanceReportPage() {
     const collectIds = (items: ReportItem[]) => {
       items.forEach((item) => {
         if (item.children && item.children.length > 0) {
-          allIds.add(item.id);
+          allIds.add(item.id || item.name);
           collectIds(item.children);
         }
       });
@@ -247,7 +228,6 @@ export default function TrialBalanceReportPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-4 text-sm">
-          {/* Filters remain the same */}
           <div className="flex items-center gap-2">
             <Label>Period :</Label>
             <Select defaultValue="custom">
@@ -329,16 +309,26 @@ export default function TrialBalanceReportPage() {
           </div>
         </div>
         <div className="flex-grow overflow-y-auto thin-scrollbar">
-          {/* --- स्टेप 4: प्रोसेस्ड डेटा का उपयोग करें --- */}
-          {processedData.map((item) => (
-            <ReportRow
-              key={item.id}
-              item={item}
-              level={0}
-              openItems={openItems}
-              toggleItem={toggleItem}
-            />
-          ))}
+          {loading ? (
+            <div className="flex items-center justify-center h-48">
+              <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+              <span className="ml-2 text-muted-foreground">Loading report...</span>
+            </div>
+          ) : processedData.length > 0 ? (
+            processedData.map((item) => (
+              <ReportRow
+                key={item.id}
+                item={item}
+                level={0}
+                openItems={openItems}
+                toggleItem={toggleItem}
+              />
+            ))
+          ) : (
+            <div className="flex items-center justify-center h-48 text-muted-foreground">
+              No data available for the selected period.
+            </div>
+          )}
         </div>
       </CardContent>
 

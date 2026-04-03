@@ -78,8 +78,32 @@ const reportItems = [
     href: "/dashboard/reports/stock-summary-report-by-item-category",
     label: "Stock Summary Report By Item Category",
   },
+  { href: "/dashboard/reports/item-category-wise-profit-and-loss", label: "Item Category Wise Profit And Loss" },
+  { href: "/dashboard/reports/item-wise-discount", label: "Item Wise Discount" },
+  { href: "/dashboard/reports/manufacturing-report", label: "Manufacturing Report" },
+  { href: "/dashboard/reports/consumption-report", label: "Consumption Report" },
+  { href: "/dashboard/reports/stock-transfer-report", label: "Stock Transfer Report" },
 
-  // --- 👆 नया ग्रुप यहाँ खत्म होता है ---
+  // Business Status
+  { type: "heading", label: "Business Status" },
+  { href: "/dashboard/reports/bank-statement", label: "Bank Statement" },
+
+  // Expense report
+  { type: "heading", label: "Expense report" },
+  { href: "/dashboard/reports/expense", label: "Expense" },
+  { href: "/dashboard/reports/expense-category-report", label: "Expense Category Report" },
+  { href: "/dashboard/reports/expense-item-report", label: "Expense Item Report" },
+
+  // Sale/Purchase Order report
+  { type: "heading", label: "Sale/ Purchase Order report" },
+  { href: "/dashboard/reports/sale-purchase-orders", label: "Sale/ Purchase Orders" },
+  { href: "/dashboard/reports/sale-purchase-order-item", label: "Sale/ Purchase Order Item" },
+
+  // Other Income report
+  { type: "heading", label: "Other Income report" },
+  { href: "/dashboard/reports/other-income", label: "Other Income" },
+  { href: "/dashboard/reports/other-income-category-report", label: "Other Income Category Report" },
+  { href: "/dashboard/reports/other-income-item-report", label: "Other Income Item Report" },
 ];
 
 export default function ReportsSidebar() {

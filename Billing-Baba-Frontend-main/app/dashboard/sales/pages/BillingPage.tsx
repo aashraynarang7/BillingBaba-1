@@ -150,8 +150,9 @@ export default function BillingPage() {
             return;
         }
 
+        const activeCompanyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : null;
         const saleData = {
-            companyId: companies[0]._id, // Use first company
+            companyId: activeCompanyId || companies[0]?._id || '', // Use first company
             partyId: selectedCustomer || undefined,
             partyName: selectedCustomer ? customers.find(c => c._id === selectedCustomer)?.name : "Cash Sale",
             documentType: 'INVOICE',

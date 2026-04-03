@@ -1,7 +1,7 @@
 // app/dashboard/reports/sale-purchase-by-party/page.tsx
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,51 +27,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ChevronDown, Printer, FileText, Search, Filter } from "lucide-react";
+import { ChevronDown, Printer, FileText, Search, Filter, Loader2 } from "lucide-react";
+import { format } from "date-fns";
+import { fetchReport } from "@/lib/api";
 
-// --- डेटा की संरचना ---
+// --- Data structure ---
 type SalePurchaseData = {
-  id: number;
-  partyName: string;
+  partyId: string;
+  name: string;
+  group: string;
   saleAmount: number;
   purchaseAmount: number;
 };
 
-// --- सैंपल डेटा ---
-const sampleData: SalePurchaseData[] = [
-  {
-    id: 1,
-    partyName: "Krishna Traders",
-    saleAmount: 265000,
-    purchaseAmount: 30000,
-  },
-  {
-    id: 2,
-    partyName: "Verma Supplies",
-    saleAmount: 25000,
-    purchaseAmount: 495000,
-  },
-  {
-    id: 3,
-    partyName: "Gupta & Sons",
-    saleAmount: 75000,
-    purchaseAmount: 120000,
-  },
-  {
-    id: 4,
-    partyName: "Sharma Solutions",
-    saleAmount: 50000,
-    purchaseAmount: 0,
-  },
-  {
-    id: 5,
-    partyName: "Global Enterprises",
-    saleAmount: 0,
-    purchaseAmount: 85000,
-  },
-];
-
-// खाली स्टेट के लिए SVG आइकॉन
+// Empty state SVG icon
 const EmptyStateIcon = () => (
   <svg
     width="100"
@@ -125,21 +94,49 @@ const EmptyStateIcon = () => (
 const formatCurrency = (val: number) => `₹ ${val.toFixed(2)}`;
 
 export default function SalePurchaseByPartyPage() {
-  const [filteredData, setFilteredData] =
-    useState<SalePurchaseData[]>(sampleData);
+  const [allData, setAllData] = useState<SalePurchaseData[]>([]);
+  const [filteredData, setFilteredData] = useState<SalePurchaseData[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [fromDate, setFromDate] = useState<Date | undefined>(
+    new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+  );
+  const [toDate, setToDate] = useState<Date | undefined>(new Date());
 
-  // --- फिल्टर लॉजिक ---
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const filters: Record<string, string> = {};
+      if (fromDate) filters.startDate = format(fromDate, "yyyy-MM-dd");
+      if (toDate) filters.endDate = format(toDate, "yyyy-MM-dd");
+      const data = await fetchReport("sale-purchase-by-party", filters);
+      const items = Array.isArray(data) ? data : [];
+      setAllData(items);
+      setFilteredData(items);
+    } catch (error) {
+      console.error("Error fetching sale-purchase by party:", error);
+      setAllData([]);
+      setFilteredData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [fromDate, toDate]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // --- Filter logic ---
   useEffect(() => {
     const data = searchTerm
-      ? sampleData.filter((d) =>
-          d.partyName.toLowerCase().includes(searchTerm.toLowerCase())
+      ? allData.filter((d) =>
+          d.name.toLowerCase().includes(searchTerm.toLowerCase())
         )
-      : sampleData;
+      : allData;
     setFilteredData(data);
-  }, [searchTerm]);
+  }, [searchTerm, allData]);
 
-  // --- टेबल फुटर के लिए टोटल ---
+  // --- Table footer totals ---
   const totals = useMemo(() => {
     return filteredData.reduce(
       (acc, item) => {
@@ -151,12 +148,12 @@ export default function SalePurchaseByPartyPage() {
     );
   }, [filteredData]);
 
-  // --- Excel एक्सपोर्ट फंक्शन ---
+  // --- Excel export function ---
   const handleExportExcel = async () => {
     try {
       const XLSX = await import("xlsx") as any;
       const dataToExport = filteredData.map((item) => ({
-        "Party Name": item.partyName,
+        "Party Name": item.name,
         "Sale Amount": item.saleAmount,
         "Purchase Amount": item.purchaseAmount,
       }));
@@ -211,13 +208,15 @@ export default function SalePurchaseByPartyPage() {
                 </Button>
                 <Input
                   type="text"
-                  defaultValue="01/09/2025"
+                  value={fromDate ? format(fromDate, "dd/MM/yyyy") : ""}
+                  readOnly
                   className="w-28 h-8 border-none bg-transparent focus-visible:ring-0"
                 />
                 <span>To</span>
                 <Input
                   type="text"
-                  defaultValue="30/09/2025"
+                  value={toDate ? format(toDate, "dd/MM/yyyy") : ""}
+                  readOnly
                   className="w-28 h-8 border-none bg-transparent focus-visible:ring-0"
                 />
               </div>
@@ -285,12 +284,21 @@ export default function SalePurchaseByPartyPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredData.length > 0 ? (
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="h-64">
+                      <div className="flex items-center justify-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                        <span className="ml-2 text-muted-foreground">Loading...</span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : filteredData.length > 0 ? (
                   filteredData.map((item, index) => (
-                    <TableRow key={item.id}>
+                    <TableRow key={item.partyId || index}>
                       <TableCell className="text-center">{index + 1}</TableCell>
                       <TableCell className="font-medium">
-                        {item.partyName}
+                        {item.name}
                       </TableCell>
                       <TableCell className="text-right">
                         {formatCurrency(item.saleAmount)}

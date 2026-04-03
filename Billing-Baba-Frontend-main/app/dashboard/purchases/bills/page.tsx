@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
+import { Plus, Upload } from 'lucide-react';
 import dynamic from 'next/dynamic';
 const CreatePurchaseInvoicePage = dynamic(() => import('../component/CreatePurchaseInvoicePage'), { ssr: false });
 const CreateDebitNotePage = dynamic(() => import('../component/CreateDebitNotePage'), { ssr: false });
 const CreatePaymentOutModal = dynamic(() => import('../component/CreatePaymentOutModal'), { ssr: false });
 const InvoicePreview = dynamic(() => import('@/app/dashboard/sales/component/InvoicePreview').then(m => ({ default: m.InvoicePreview })), { ssr: false });
+const UploadPurchaseBillModal = dynamic(() => import('../component/UploadPurchaseBillModal'), { ssr: false });
 import FilterBar from '@/app/dashboard/sales/component/FilterBar';
 import TransactionsTable from '@/app/dashboard/sales/component/TransactionsTable';
 import { fetchPurchases } from '@/lib/api';
@@ -81,6 +82,9 @@ export default function PurchaseBills() {
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [paymentModalData, setPaymentModalData] = useState<{ partyId?: string; amount?: number; invoiceId?: string; }>({});
     const [printInvoiceData, setPrintInvoiceData] = useState<any>(null);
+
+    // Upload Bill AI Modal
+    const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
     const loadPurchases = async () => {
         setIsLoading(true);
@@ -187,6 +191,36 @@ export default function PurchaseBills() {
         if (rawPurchase) setPrintInvoiceData(rawPurchase);
     };
 
+    const handleAIParsedData = (data: any) => {
+        // Transform AI-parsed data into the shape CreatePurchaseInvoicePage expects as initialData
+        setInitialDataForEdit({
+            partyName: data.partyName,
+            phone: data.phone,
+            billNumber: data.billNumber,
+            billDate: data.billDate ? new Date(data.billDate) : new Date(),
+            stateOfSupply: data.stateOfSupply,
+            description: data.description,
+            items: data.items.map((item: any) => ({
+                name: item.name,
+                quantity: item.quantity,
+                unit: item.unit,
+                priceUnit: item.priceUnit,
+                discount: item.discount,
+                tax: item.tax,
+                amount: item.amount,
+            })),
+            subTotal: data.subTotal,
+            totalDiscount: data.totalDiscount,
+            totalTax: data.totalTax,
+            grandTotal: data.grandTotal,
+            roundOff: 0,
+            paidAmount: 0,
+            balanceDue: data.grandTotal,
+            documentType: 'BILL',
+        });
+        setIsCreating(true);
+    };
+
     const handleConvert = (id: string) => {
         const rawPurchase = rawPurchases.find(p => String(p._id) === id);
         if (rawPurchase) {
@@ -232,12 +266,21 @@ export default function PurchaseBills() {
                 <CardContent className="p-0 divide-y">
                     <div className="p-4 border-b flex justify-between items-center">
                         <FilterBar onFilterChange={setFilters} statusOptions={availableStatuses} />
-                        <Button
-                            className="bg-[var(--accent-orange)] hover:bg-[var(--primary-red)] text-white"
-                            onClick={() => setIsCreating(true)}
-                        >
-                            <Plus size={18} className="mr-2" /> Add Purchase Bill
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                className="border-[var(--secondary-blue)] text-[var(--secondary-blue)] hover:bg-blue-50"
+                                onClick={() => setIsUploadModalOpen(true)}
+                            >
+                                <Upload size={18} className="mr-2" /> Upload Bill (AI)
+                            </Button>
+                            <Button
+                                className="bg-[var(--accent-orange)] hover:bg-[var(--primary-red)] text-white"
+                                onClick={() => setIsCreating(true)}
+                            >
+                                <Plus size={18} className="mr-2" /> Add Purchase Bill
+                            </Button>
+                        </div>
                     </div>
                 </CardContent>
             </Card>
@@ -294,6 +337,12 @@ export default function PurchaseBills() {
                     type="PURCHASE_BILL"
                 />
             )}
+
+            <UploadPurchaseBillModal
+                isOpen={isUploadModalOpen}
+                onClose={() => setIsUploadModalOpen(false)}
+                onUseData={handleAIParsedData}
+            />
         </div>
     );
 }

@@ -144,7 +144,10 @@ export const createSale = async (data: any) => {
         headers: getHeaders(isFormData),
         body: isFormData ? data : getBody(data),
     });
-    if (!response.ok) throw new Error('Failed to create sale');
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || err.message || 'Failed to create sale');
+    }
     return response.json();
 };
 
@@ -397,6 +400,12 @@ export const fetchCompanies = async () => {
         headers: getHeaders()
     });
     if (!response.ok) throw new Error('Failed to fetch companies');
+    return response.json();
+};
+
+export const fetchSharedCompanies = async () => {
+    const response = await fetch(`${API_BASE_URL}/companies/shared`, { headers: getHeaders() });
+    if (!response.ok) throw new Error('Failed to fetch shared companies');
     return response.json();
 };
 
@@ -666,6 +675,18 @@ export const fetchBillWiseProfit = async (filters?: { startDate?: string; endDat
     if (filters?.party) url += `&party=${encodeURIComponent(filters.party)}`;
     const response = await fetch(url, { headers: getHeaders() });
     if (!response.ok) throw new Error('Failed to fetch bill wise profit');
+    return response.json();
+};
+
+// Generic report fetcher — works for any report name registered in backend runReportFilter
+export const fetchReport = async (reportName: string, filters?: Record<string, string>) => {
+    const companyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : '';
+    let url = `${API_BASE_URL}/reports/${reportName}?companyId=${companyId}`;
+    if (filters) {
+        Object.entries(filters).forEach(([k, v]) => { if (v) url += `&${k}=${encodeURIComponent(v)}`; });
+    }
+    const response = await fetch(url, { headers: getHeaders() });
+    if (!response.ok) throw new Error(`Failed to fetch ${reportName} report`);
     return response.json();
 };
 
@@ -960,7 +981,30 @@ export const updateItemSettings = async (data: Record<string, any>) => {
 // ─── Barcode Lookup ───────────────────────────────────────────────────────────
 
 export const lookupBarcode = async (code: string) => {
-    const res = await fetch(`${API_BASE_URL}/barcode/lookup/${encodeURIComponent(code)}`, { headers: getHeaders() });
+    // Uses a Next.js server-side proxy so mobile devices don't need to reach localhost
+    const res = await fetch(`/api/barcode/${encodeURIComponent(code)}`);
     if (!res.ok) throw new Error('Barcode lookup failed');
+    return res.json();
+};
+
+// ─── Bill Parser (AI / Ollama) ──────────────────────────────────────────────
+
+export const parseBillImage = async (file: File) => {
+    const formData = new FormData();
+    formData.append('billImage', file);
+    const res = await fetch(`${API_BASE_URL}/bill-parser/parse`, {
+        method: 'POST',
+        headers: getHeaders(true),
+        body: formData,
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: 'Upload failed' }));
+        throw new Error(err.message || 'Upload failed');
+    }
+    return res.json();
+};
+
+export const checkOllamaStatus = async () => {
+    const res = await fetch(`${API_BASE_URL}/bill-parser/status`, { headers: getHeaders() });
     return res.json();
 };

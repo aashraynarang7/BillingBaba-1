@@ -99,8 +99,8 @@ exports.createItem = async (req, res) => {
 
 exports.getItems = async (req, res) => {
     try {
-        const { companyId, type, productId, id } = req.query;
-        const filter = { isActive: { $ne: false } };
+        const { companyId, type, productId, id, includeInactive } = req.query;
+        const filter = includeInactive === 'true' ? {} : { isActive: { $ne: false } };
         if (companyId) filter.companyId = companyId;
         if (type) filter.type = type;
         if (productId) filter.product = productId;

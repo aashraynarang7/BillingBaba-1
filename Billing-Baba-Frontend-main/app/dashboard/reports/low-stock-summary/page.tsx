@@ -1,7 +1,7 @@
 // app/dashboard/reports/low-stock-summary/page.tsx
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -21,111 +21,77 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Printer, FileSpreadsheet } from "lucide-react";
+import { Printer, FileSpreadsheet, Loader2 } from "lucide-react";
+import { fetchReport } from "@/lib/api";
 
-// --- डेटा की संरचना ---
+// --- Data structure ---
 type LowStockItem = {
-  id: number;
   name: string;
   category: string;
-  minimumStockQty: number;
-  stockQty: number;
-  purchasePrice: number; // Stock Value की गणना के लिए
+  minStockToMaintain: number;
+  currentQuantity: number;
+  stockValue: number;
 };
 
-// --- सैंपल डेटा ---
-const sampleData: LowStockItem[] = [
-  {
-    id: 1,
-    name: "Laptop HP ProBook",
-    category: "Electronics",
-    minimumStockQty: 10,
-    stockQty: 5,
-    purchasePrice: 48000,
-  },
-  {
-    id: 2,
-    name: "A4 Paper Rim",
-    category: "Stationery",
-    minimumStockQty: 50,
-    stockQty: 150,
-    purchasePrice: 420,
-  }, // Not low stock
-  {
-    id: 3,
-    name: "Drill Machine Bosch",
-    category: "Hardware",
-    minimumStockQty: 10,
-    stockQty: 8,
-    purchasePrice: 6800,
-  },
-  {
-    id: 4,
-    name: "Mouse Logitech MX",
-    category: "Electronics",
-    minimumStockQty: 20,
-    stockQty: 45,
-    purchasePrice: 650,
-  }, // Not low stock
-  {
-    id: 5,
-    name: "Antivirus Pro (1 Year)",
-    category: "Software",
-    minimumStockQty: 25,
-    stockQty: 10,
-    purchasePrice: 250,
-  },
-  {
-    id: 6,
-    name: "Office Chair",
-    category: "Furniture",
-    minimumStockQty: 5,
-    stockQty: 0,
-    purchasePrice: 7200,
-  },
-];
 const formatCurrency = (val: number) => `₹ ${val.toFixed(2)}`;
 
 export default function LowStockSummaryPage() {
+  const [allData, setAllData] = useState<LowStockItem[]>([]);
   const [filteredData, setFilteredData] = useState<LowStockItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [showInStockOnly, setShowInStockOnly] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // --- फिल्टर लॉजिक ---
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchReport("low-stock-summary");
+      const items = Array.isArray(data) ? data : [];
+      setAllData(items);
+    } catch (error) {
+      console.error("Error fetching low stock summary:", error);
+      setAllData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    // 1. पहले low stock items को फिल्टर करें
-    let data = sampleData.filter(
-      (item) => item.stockQty <= item.minimumStockQty
-    );
+    loadData();
+  }, [loadData]);
 
-    // 2. फिर कैटेगरी फिल्टर लगाएं
+  // --- Filter logic ---
+  useEffect(() => {
+    let data = allData;
+
+    // Category filter
     if (selectedCategory !== "all") {
       data = data.filter((item) => item.category === selectedCategory);
     }
 
-    // 3. फिर 'Show items in stock' फिल्टर लगाएं (यह 0 quantity वालों को हटा देगा)
+    // 'Show items in stock' filter (removes 0 quantity items)
     if (showInStockOnly) {
-      data = data.filter((item) => item.stockQty > 0);
+      data = data.filter((item) => item.currentQuantity > 0);
     }
 
     setFilteredData(data);
-  }, [selectedCategory, showInStockOnly]);
+  }, [selectedCategory, showInStockOnly, allData]);
 
-  // --- फिल्टर ड्रॉपडाउन के लिए यूनिक कैटेगरी ---
+  // --- Unique categories for filter dropdown ---
   const uniqueCategories = useMemo(
-    () => ["all", ...Array.from(new Set(sampleData.map((d) => d.category)))],
-    []
+    () => ["all", ...Array.from(new Set(allData.map((d) => d.category).filter(Boolean)))],
+    [allData]
   );
 
-  // --- एक्सपोर्ट और प्रिंट फंक्शन ---
+  // --- Export and print functions ---
   const handleExportExcel = async () => {
     try {
       const XLSX = await import("xlsx") as any;
       const dataToExport = filteredData.map((item) => ({
         "Item Name": item.name,
-        "Minimum Stock Qty": item.minimumStockQty,
-        "Stock Qty": item.stockQty,
-        "Stock Value": item.stockQty * item.purchasePrice,
+        "Minimum Stock Qty": item.minStockToMaintain,
+        "Stock Qty": item.currentQuantity,
+        "Stock Value": item.stockValue,
       }));
       const worksheet = XLSX.utils.json_to_sheet(dataToExport);
       const workbook = XLSX.utils.book_new();
@@ -194,16 +160,25 @@ export default function LowStockSummaryPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.length > 0 ? (
-                filteredData.map((item) => (
-                  <TableRow key={item.id}>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="h-48">
+                    <div className="flex items-center justify-center">
+                      <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                      <span className="ml-2 text-muted-foreground">Loading...</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : filteredData.length > 0 ? (
+                filteredData.map((item, index) => (
+                  <TableRow key={item.name + index}>
                     <TableCell className="font-medium">{item.name}</TableCell>
-                    <TableCell>{item.minimumStockQty}</TableCell>
+                    <TableCell>{item.minStockToMaintain}</TableCell>
                     <TableCell className="font-bold text-red-600">
-                      {item.stockQty}
+                      {item.currentQuantity}
                     </TableCell>
                     <TableCell>
-                      {formatCurrency(item.stockQty * item.purchasePrice)}
+                      {formatCurrency(item.stockValue)}
                     </TableCell>
                   </TableRow>
                 ))

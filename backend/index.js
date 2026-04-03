@@ -59,6 +59,10 @@ app.use('/api/settings', require('./src/routes/settingsRoutes'));
 app.use('/api/party-groups', require('./src/routes/partyGroupRoutes'));
 app.use('/api/item-settings', require('./src/routes/itemSettingsRoutes'));
 app.use('/api/barcode', require('./src/routes/barcodeRoutes'));
+app.use('/api/bill-parser', require('./src/routes/billParserRoutes'));
+
+app.use('/api/job-work', require('./src/routes/jobWorkRoutes'));
+app.use('/api/scan', require('./src/routes/scanRoutes'));
 
 // Start Server
 app.listen(PORT, () => {

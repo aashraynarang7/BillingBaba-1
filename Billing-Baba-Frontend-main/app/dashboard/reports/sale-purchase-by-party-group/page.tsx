@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,16 +18,17 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import Image from "next/image";
 import {
   Printer,
   Search,
   Filter,
   FileSpreadsheet,
   Calendar as CalendarIcon,
+  Loader2,
 } from "lucide-react";
+import { fetchReport } from "@/lib/api";
 
-// Table Header ke liye ek reusable component
+// Table Header reusable component
 const TableHeaderCell = ({
   children,
   className = "",
@@ -43,63 +44,55 @@ const TableHeaderCell = ({
   </div>
 );
 
-// Party group data ke liye TypeScript type
+// Party group data type
 type PartyGroupData = {
-  id: number;
-  groupName: string;
+  group: string;
   saleAmount: number;
   purchaseAmount: number;
 };
 
-// Sample data
-const sampleData: PartyGroupData[] = [
-  { id: 1, groupName: "Retailers", saleAmount: 125000, purchaseAmount: 75000 },
-  {
-    id: 2,
-    groupName: "Wholesalers",
-    saleAmount: 450000,
-    purchaseAmount: 320000,
-  },
-  {
-    id: 3,
-    groupName: "Distributors",
-    saleAmount: 875000,
-    purchaseAmount: 650000,
-  },
-  {
-    id: 4,
-    groupName: "Online Customers",
-    saleAmount: 75000,
-    purchaseAmount: 0,
-  },
-  {
-    id: 5,
-    groupName: "Corporate Clients",
-    saleAmount: 210000,
-    purchaseAmount: 50000,
-  },
-];
-
 export default function SalePurchaseByPartyGroupPage() {
   const [fromDate, setFromDate] = useState<Date | undefined>(
-    new Date("2025-09-01")
+    new Date(new Date().getFullYear(), new Date().getMonth(), 1)
   );
-  const [toDate, setToDate] = useState<Date | undefined>(
-    new Date("2025-09-30")
-  );
+  const [toDate, setToDate] = useState<Date | undefined>(new Date());
   const [searchTerm, setSearchTerm] = useState("");
-  const [filteredData, setFilteredData] =
-    useState<PartyGroupData[]>(sampleData);
+  const [allData, setAllData] = useState<PartyGroupData[]>([]);
+  const [filteredData, setFilteredData] = useState<PartyGroupData[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Search filter ka logic
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const filters: Record<string, string> = {};
+      if (fromDate) filters.startDate = format(fromDate, "yyyy-MM-dd");
+      if (toDate) filters.endDate = format(toDate, "yyyy-MM-dd");
+      const data = await fetchReport("sale-purchase-by-party-group", filters);
+      const items = Array.isArray(data) ? data : [];
+      setAllData(items);
+      setFilteredData(items);
+    } catch (error) {
+      console.error("Error fetching sale-purchase by party group:", error);
+      setAllData([]);
+      setFilteredData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [fromDate, toDate]);
+
   useEffect(() => {
-    const results = sampleData.filter((item) =>
-      item.groupName.toLowerCase().includes(searchTerm.toLowerCase())
+    loadData();
+  }, [loadData]);
+
+  // Search filter logic
+  useEffect(() => {
+    const results = allData.filter((item) =>
+      item.group.toLowerCase().includes(searchTerm.toLowerCase())
     );
     setFilteredData(results);
-  }, [searchTerm]);
+  }, [searchTerm, allData]);
 
-  // Footer ke totals ko dynamically calculate karna
+  // Footer totals
   const { totalSaleAmount, totalPurchaseAmount } = useMemo(() => {
     return filteredData.reduce(
       (totals, item) => {
@@ -110,11 +103,6 @@ export default function SalePurchaseByPartyGroupPage() {
       { totalSaleAmount: 0, totalPurchaseAmount: 0 }
     );
   }, [filteredData]);
-
-  // Fixed onChange handler
-  // const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-  //   setSearchTerm(e.target.value || "");
-  // };
 
   return (
     <div className="flex flex-col h-full bg-slate-50">
@@ -221,7 +209,7 @@ export default function SalePurchaseByPartyGroupPage() {
                 placeholder=""
                 className="pl-10"
                 value={searchTerm}
-                // onChange={handleSearchChange}
+                onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
           </div>
@@ -235,14 +223,19 @@ export default function SalePurchaseByPartyGroupPage() {
 
           {/* Data Rows / Empty State */}
           <div className="flex-1 overflow-y-auto">
-            {filteredData.length > 0 ? (
-              filteredData.map((item) => (
+            {loading ? (
+              <div className="flex items-center justify-center h-48">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                <span className="ml-2 text-muted-foreground">Loading...</span>
+              </div>
+            ) : filteredData.length > 0 ? (
+              filteredData.map((item, index) => (
                 <div
-                  key={item.id}
+                  key={item.group || index}
                   className="grid grid-cols-3 border-b text-sm items-center hover:bg-slate-50"
                 >
                   <div className="p-3 font-medium text-gray-800 border-r">
-                    {item.groupName}
+                    {item.group}
                   </div>
                   <div className="p-3 text-gray-600 border-r">
                     ₹{item.saleAmount.toFixed(2)}

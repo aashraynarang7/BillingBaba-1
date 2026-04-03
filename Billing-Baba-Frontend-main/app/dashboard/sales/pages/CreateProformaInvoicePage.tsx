@@ -262,7 +262,8 @@ export default function CreateProformaInvoicePage({ onCancel, initialData }: { o
 
     const handleSave = async () => {
         const formData = new FormData();
-        formData.append('companyId', companies[0]?._id);
+        const activeCompanyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : null;
+        formData.append('companyId', activeCompanyId || companies[0]?._id || '');
         if (selectedPartyId) formData.append('partyId', selectedPartyId);
         formData.append('partyName', selectedPartyId ? parties.find(p => p._id === selectedPartyId)?.name : "Cash Sale");
         formData.append('phone', selectedPhone);

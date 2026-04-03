@@ -186,7 +186,8 @@ export default function CreatePurchaseInvoicePage({ onCancel, initialData }: { o
         }
 
         const formData = new FormData();
-        formData.append('companyId', companies[0]._id);
+        const activeCompanyId = typeof window !== 'undefined' ? localStorage.getItem('activeCompanyId') : null;
+        formData.append('companyId', activeCompanyId || companies[0]?._id || '');
         if (selectedPartyId) formData.append('partyId', selectedPartyId);
         formData.append('partyName', selectedParty ? selectedParty.name : "Cash Purchase");
         formData.append('documentType', 'BILL');

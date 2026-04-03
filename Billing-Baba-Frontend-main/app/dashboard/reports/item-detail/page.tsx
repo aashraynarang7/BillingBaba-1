@@ -1,7 +1,7 @@
 // app/dashboard/reports/item-detail/page.tsx
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,123 +25,100 @@ import {
   Calendar as CalendarIcon,
   Printer,
   FileSpreadsheet,
+  Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
+import { fetchReport } from "@/lib/api";
 
-// --- डेटा की संरचना ---
+// --- Data structure ---
 type ItemTransaction = {
-  id: number;
-  itemName: string;
+  id: string;
   date: string;
   saleQty: number;
   purchaseQty: number;
+  type: string;
   adjustmentQty: number;
 };
-
-// --- सैंपल डेटा (एक आइटम के लिए कई तारीखों का) ---
-const sampleTransactions: ItemTransaction[] = [
-  {
-    id: 1,
-    itemName: "Laptop HP ProBook",
-    date: "01/09/2025",
-    saleQty: 3,
-    purchaseQty: 5,
-    adjustmentQty: 0,
-  },
-  {
-    id: 2,
-    itemName: "Laptop HP ProBook",
-    date: "02/09/2025",
-    saleQty: 0,
-    purchaseQty: 0,
-    adjustmentQty: 0,
-  }, // Inactive date
-  {
-    id: 3,
-    itemName: "Laptop HP ProBook",
-    date: "03/09/2025",
-    saleQty: 1,
-    purchaseQty: 0,
-    adjustmentQty: 0,
-  },
-  {
-    id: 4,
-    itemName: "Laptop HP ProBook",
-    date: "04/09/2025",
-    saleQty: 0,
-    purchaseQty: 10,
-    adjustmentQty: -1,
-  }, // Stock adjustment
-  {
-    id: 5,
-    itemName: "Laptop HP ProBook",
-    date: "05/09/2025",
-    saleQty: 4,
-    purchaseQty: 0,
-    adjustmentQty: 0,
-  },
-  {
-    id: 6,
-    itemName: "A4 Paper Rim",
-    date: "01/09/2025",
-    saleQty: 20,
-    purchaseQty: 50,
-    adjustmentQty: 0,
-  },
-  {
-    id: 7,
-    itemName: "A4 Paper Rim",
-    date: "03/09/2025",
-    saleQty: 10,
-    purchaseQty: 0,
-    adjustmentQty: 5,
-  },
-];
 
 export default function ItemDetailPage() {
   const [transactions, setTransactions] = useState<ItemTransaction[]>([]);
   const [itemNameFilter, setItemNameFilter] = useState("");
   const [hideInactive, setHideInactive] = useState(false);
   const [fromDate, setFromDate] = useState<Date | undefined>(
-    new Date(2025, 8, 1)
+    new Date(new Date().getFullYear(), new Date().getMonth(), 1)
   );
-  const [toDate, setToDate] = useState<Date | undefined>(new Date(2025, 8, 6));
+  const [toDate, setToDate] = useState<Date | undefined>(new Date());
+  const [loading, setLoading] = useState(false);
 
-  // --- फिल्टर लॉजिक ---
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!itemNameFilter) {
-      setTransactions([]); // अगर कोई आइटम नहीं चुना है तो टेबल खाली रखें
+      setTransactions([]);
       return;
     }
+    setLoading(true);
+    try {
+      const filters: Record<string, string> = { itemName: itemNameFilter };
+      if (fromDate) filters.startDate = format(fromDate, "yyyy-MM-dd");
+      if (toDate) filters.endDate = format(toDate, "yyyy-MM-dd");
+      const data = await fetchReport("item-detail", filters);
 
-    let data = sampleTransactions.filter(
-      (item) => item.itemName.toLowerCase() === itemNameFilter.toLowerCase()
-    );
+      // API returns {itemName: [{date, saleQty, purchaseQty, type}], ...}
+      let allTransactions: ItemTransaction[] = [];
+      if (data && typeof data === "object") {
+        Object.entries(data).forEach(([itemName, txns]: [string, any]) => {
+          if (Array.isArray(txns)) {
+            txns.forEach((txn: any, idx: number) => {
+              allTransactions.push({
+                id: `${itemName}-${idx}`,
+                date: txn.date || "",
+                saleQty: txn.saleQty || 0,
+                purchaseQty: txn.purchaseQty || 0,
+                type: txn.type || "",
+                adjustmentQty: 0,
+              });
+            });
+          }
+        });
+      }
 
-    if (hideInactive) {
-      data = data.filter(
-        (item) =>
-          item.saleQty !== 0 ||
-          item.purchaseQty !== 0 ||
-          item.adjustmentQty !== 0
-      );
+      setTransactions(allTransactions);
+    } catch (error) {
+      console.error("Error fetching item detail:", error);
+      setTransactions([]);
+    } finally {
+      setLoading(false);
     }
+  }, [itemNameFilter, fromDate, toDate]);
 
-    setTransactions(data);
-  }, [itemNameFilter, hideInactive]);
+  useEffect(() => {
+    const debounce = setTimeout(() => {
+      loadData();
+    }, 500);
+    return () => clearTimeout(debounce);
+  }, [loadData]);
 
-  // --- रनिंग क्लोजिंग क्वांटिटी की गणना ---
+  // Filter inactive dates
+  const displayData = useMemo(() => {
+    if (!hideInactive) return transactions;
+    return transactions.filter(
+      (item) =>
+        item.saleQty !== 0 ||
+        item.purchaseQty !== 0 ||
+        item.adjustmentQty !== 0
+    );
+  }, [transactions, hideInactive]);
+
+  // --- Running closing quantity ---
   const processedData = useMemo(() => {
-    const openingStock = 20; // एक सैंपल ओपनिंग स्टॉक मान लें
-    let closingQty = openingStock;
-    return transactions.map((item) => {
+    let closingQty = 0;
+    return displayData.map((item) => {
       closingQty =
         closingQty - item.saleQty + item.purchaseQty + item.adjustmentQty;
       return { ...item, closingQty };
     });
-  }, [transactions]);
+  }, [displayData]);
 
-  // --- एक्सपोर्ट और प्रिंट फंक्शन ---
+  // --- Export and print functions ---
   const handleExportExcel = async () => {
     if (processedData.length === 0) return;
     try {
@@ -251,10 +228,19 @@ export default function ItemDetailPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {processedData.length > 0 ? (
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="h-48">
+                      <div className="flex items-center justify-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                        <span className="ml-2 text-muted-foreground">Loading...</span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : processedData.length > 0 ? (
                   processedData.map((item) => (
                     <TableRow key={item.id}>
-                      <TableCell>{item.date}</TableCell>
+                      <TableCell>{item.date ? format(new Date(item.date), "dd/MM/yyyy") : "--"}</TableCell>
                       <TableCell>{item.saleQty}</TableCell>
                       <TableCell>{item.purchaseQty}</TableCell>
                       <TableCell>{item.adjustmentQty}</TableCell>

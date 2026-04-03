@@ -15,75 +15,130 @@ import { cn } from '@/lib/utils'
 // ─── Permission value types ──────────────────────────────────────────────────
 type Perm = 'yes' | 'no' | 'na' | 'limited';
 type PermRow = { label: string; view: Perm; create: Perm; edit: Perm; share: Perm; delete: Perm };
+type PermSection = { section: string; rows: PermRow[] };
 
-// ─── Role permission definitions ─────────────────────────────────────────────
-const ROLE_PERMISSIONS: Record<string, PermRow[]> = {
-  'secondary-admin': [
-    { label: 'All Transactions', view: 'yes', create: 'yes', edit: 'yes',  share: 'yes', delete: 'yes' },
-    { label: 'Settings',         view: 'yes', create: 'na',  edit: 'yes',  share: 'na',  delete: 'na'  },
-    { label: 'Sync Settings',    view: 'no',  create: 'no',  edit: 'no',   share: 'na',  delete: 'no'  },
-    { label: 'Reports',          view: 'yes', create: 'na',  edit: 'na',   share: 'yes', delete: 'na'  },
-    { label: 'Stock Transfer',   view: 'yes', create: 'yes', edit: 'na',   share: 'yes', delete: 'yes' },
-    { label: 'Party Smart Connect', view: 'yes', create: 'yes', edit: 'yes', share: 'na', delete: 'na' },
-  ],
-  'biller': [
-    { label: 'Sale',              view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Payment-In',        view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Sale Order',        view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Credit Note',       view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Delivery Challan',  view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Estimate',          view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Purchase',          view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Payment-Out',       view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-  ],
-  'biller-salesman': [
-    { label: 'Sale',              view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Payment-In',        view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Sale Order',        view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Credit Note',       view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Delivery Challan',  view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Estimate',          view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Purchase',          view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Payment-Out',       view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-  ],
-  'ca-accountant': [
-    { label: 'All Transactions', view: 'yes', create: 'no',  edit: 'no',  share: 'yes', delete: 'no'  },
-    { label: 'Settings',         view: 'no',  create: 'no',  edit: 'no',  share: 'no',  delete: 'no'  },
-    { label: 'Sync Settings',    view: 'no',  create: 'no',  edit: 'no',  share: 'no',  delete: 'no'  },
-    { label: 'Reports',          view: 'yes', create: 'yes', edit: 'yes', share: 'yes', delete: 'yes' },
-    { label: 'Stock Transfer',   view: 'yes', create: 'no',  edit: 'na',  share: 'yes', delete: 'no'  },
-  ],
+// ─── Role permission definitions (grouped by section) ────────────────────────
+const ROLE_PERMISSIONS: Record<string, PermSection[]> = {
   'salesman': [
-    { label: 'Sale',              view: 'limited', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Payment-In',        view: 'limited', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Sale Order',        view: 'limited', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Credit Note',       view: 'limited', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Delivery Challan',  view: 'limited', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Estimate',          view: 'limited', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+    {
+      section: 'Sales Permissions',
+      rows: [
+        { label: 'Sale',             view: 'limited', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+        { label: 'Payment-In',       view: 'limited', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+        { label: 'Sale Order',       view: 'limited', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+        { label: 'Credit Note',      view: 'limited', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+        { label: 'Delivery Challan', view: 'limited', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+        { label: 'Estimate',         view: 'limited', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+      ]
+    },
+    {
+      section: 'Purchase & Expense',
+      rows: [
+        { label: 'Expenses',         view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+        { label: 'Purchase Bills',   view: 'no',  create: 'no',  edit: 'no',     share: 'no',  delete: 'no' },
+        { label: 'Payment-Out',      view: 'no',  create: 'no',  edit: 'no',     share: 'no',  delete: 'no' },
+        { label: 'Purchase Order',   view: 'no',  create: 'no',  edit: 'no',     share: 'no',  delete: 'no' },
+      ]
+    },
+    {
+      section: 'Cash, Bank & Assets',
+      rows: [
+        { label: 'Cash in Hand',     view: 'no', create: 'no', edit: 'no', share: 'no', delete: 'no' },
+        { label: 'Bank Accounts',    view: 'no', create: 'no', edit: 'no', share: 'no', delete: 'no' },
+        { label: 'Cheques',          view: 'no', create: 'no', edit: 'no', share: 'no', delete: 'no' },
+      ]
+    },
   ],
+
+  'biller': [
+    {
+      section: 'Sales Permissions',
+      rows: [
+        { label: 'Sale',             view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+        { label: 'Payment-In',       view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+        { label: 'Sale Order',       view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+        { label: 'Credit Note',      view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+        { label: 'Delivery Challan', view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+        { label: 'Estimate',         view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+      ]
+    },
+    {
+      section: 'Purchase & Expense',
+      rows: [
+        { label: 'Purchase Bills',   view: 'limited', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+        { label: 'Payment-Out',      view: 'limited', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+        { label: 'Expenses',         view: 'yes',     create: 'yes', edit: 'yes',     share: 'yes', delete: 'no' },
+        { label: 'Purchase Order',   view: 'limited', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
+        { label: 'Debit Note',       view: 'no',      create: 'no',  edit: 'no',      share: 'no',  delete: 'no' },
+      ]
+    },
+    {
+      section: 'Cash, Bank & Assets',
+      rows: [
+        { label: 'Cash in Hand',     view: 'no', create: 'no', edit: 'no', share: 'no', delete: 'no' },
+        { label: 'Bank Accounts',    view: 'no', create: 'no', edit: 'no', share: 'no', delete: 'no' },
+      ]
+    },
+  ],
+
   'stock-keeper': [
-    { label: 'Items',            view: 'yes', create: 'yes', edit: 'yes', share: 'yes', delete: 'no'  },
-    { label: 'Stock Transfer',   view: 'yes', create: 'yes', edit: 'na',  share: 'yes', delete: 'yes' },
-    { label: 'Purchase',         view: 'yes', create: 'yes', edit: 'limited', share: 'yes', delete: 'no' },
-    { label: 'Reports',          view: 'yes', create: 'na',  edit: 'na',  share: 'yes', delete: 'na'  },
+    {
+      section: 'Purchase & Expense',
+      rows: [
+        { label: 'Purchase Bills',   view: 'yes', create: 'yes', edit: 'limited', share: 'no', delete: 'no' },
+        { label: 'Payment-Out',      view: 'yes', create: 'yes', edit: 'limited', share: 'no', delete: 'no' },
+        { label: 'Expenses',         view: 'yes', create: 'yes', edit: 'yes',     share: 'yes', delete: 'no' },
+        { label: 'Purchase Order',   view: 'yes', create: 'yes', edit: 'limited', share: 'no', delete: 'no' },
+        { label: 'Debit Note',       view: 'yes', create: 'yes', edit: 'limited', share: 'no', delete: 'no' },
+      ]
+    },
+    {
+      section: 'Items & Stock',
+      rows: [
+        { label: 'Item Details',     view: 'yes',     create: 'yes', edit: 'yes', share: 'na', delete: 'no' },
+        { label: 'Godown Management',view: 'yes',     create: 'yes', edit: 'yes', share: 'na', delete: 'no' },
+        { label: 'Stock Transfer',   view: 'limited', create: 'yes', edit: 'na',  share: 'yes', delete: 'no' },
+      ]
+    },
+    {
+      section: 'Sale',
+      rows: [
+        { label: 'Sale Invoice',     view: 'no', create: 'no', edit: 'no', share: 'no', delete: 'no' },
+        { label: 'Payment-In',       view: 'no', create: 'no', edit: 'no', share: 'no', delete: 'no' },
+      ]
+    },
+  ],
+
+  'ca-accountant': [
+    {
+      section: 'CA/Accountant Permissions',
+      rows: [
+        { label: 'All Transactions',     view: 'yes', create: 'yes', edit: 'yes', share: 'yes', delete: 'yes' },
+        { label: 'Settings',             view: 'yes', create: 'na',  edit: 'yes', share: 'na',  delete: 'na'  },
+        { label: 'Sync Settings',        view: 'no',  create: 'no',  edit: 'no',  share: 'na',  delete: 'no'  },
+        { label: 'Reports',              view: 'yes', create: 'na',  edit: 'na',  share: 'yes', delete: 'na'  },
+        { label: 'Stock Transfer',       view: 'yes', create: 'yes', edit: 'na',  share: 'yes', delete: 'yes' },
+        { label: 'Party Smart Connect',  view: 'no',  create: 'na',  edit: 'no',  share: 'na',  delete: 'no'  },
+      ]
+    },
   ],
 };
 
 const ROLE_LABELS: Record<string, string> = {
-  'secondary-admin': 'Secondary Admin',
-  'biller': 'Biller',
-  'biller-salesman': 'Biller and Salesman',
-  'ca-accountant': 'CA / Accountant',
   'salesman': 'Salesman',
+  'biller': 'Biller',
   'stock-keeper': 'Stock Keeper',
+  'ca-accountant': 'CA/Accountant(Edit Access)',
 };
+
+const DROPDOWN_ROLES = ['salesman', 'biller', 'stock-keeper', 'ca-accountant'] as const;
 
 // ─── Permission cell renderer ─────────────────────────────────────────────────
 const PermCell = ({ value }: { value: Perm }) => {
   if (value === 'yes') return <Check className="h-4 w-4 text-green-500 mx-auto" strokeWidth={3} />;
   if (value === 'no')  return <X className="h-4 w-4 text-red-500 mx-auto" strokeWidth={3} />;
   if (value === 'limited') return <AlertTriangle className="h-4 w-4 text-gray-400 mx-auto" strokeWidth={1.5} />;
-  return <span className="text-gray-400 text-xs mx-auto block text-center">NA</span>;
+  return <span className="text-gray-400 text-xs mx-auto block text-center">—</span>;
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -118,7 +173,18 @@ const AddUserModal = ({ children, onSuccess }: AddUserModalProps) => {
     }
   };
 
-  const permissions = formData.userRole ? ROLE_PERMISSIONS[formData.userRole] : null;
+  const sections = formData.userRole ? ROLE_PERMISSIONS[formData.userRole] : null;
+
+  const tableHeader = (
+    <thead>
+      <tr className="bg-gray-50 border-b border-gray-200">
+        <th className="text-left px-5 py-3 text-gray-500 font-medium text-xs uppercase tracking-wide w-2/5">Transactions</th>
+        {['VIEW', 'CREATE', 'EDIT', 'SHARE', 'DELETE'].map(h => (
+          <th key={h} className="px-4 py-3 text-blue-600 font-semibold text-xs uppercase tracking-wide text-center">{h}</th>
+        ))}
+      </tr>
+    </thead>
+  );
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -177,10 +243,10 @@ const AddUserModal = ({ children, onSuccess }: AddUserModalProps) => {
                     <CommandInput placeholder="Search role..." className="text-gray-900 placeholder:text-gray-400" />
                     <CommandEmpty className="py-3 px-4 text-sm text-gray-500">No role found.</CommandEmpty>
                     <CommandGroup>
-                      {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                      {DROPDOWN_ROLES.map((value) => (
                         <CommandItem
                           key={value}
-                          value={label}
+                          value={ROLE_LABELS[value]}
                           onSelect={() => {
                             setFormData(p => ({ ...p, userRole: value }));
                             setRolePopoverOpen(false);
@@ -188,7 +254,7 @@ const AddUserModal = ({ children, onSuccess }: AddUserModalProps) => {
                           className="text-gray-900 cursor-pointer"
                         >
                           <Check className={cn('mr-2 h-4 w-4 text-blue-600', formData.userRole === value ? 'opacity-100' : 'opacity-0')} />
-                          {label}
+                          {ROLE_LABELS[value]}
                         </CommandItem>
                       ))}
                     </CommandGroup>
@@ -198,36 +264,31 @@ const AddUserModal = ({ children, onSuccess }: AddUserModalProps) => {
             </div>
           </div>
 
-          {/* Permissions table */}
-          {permissions && (
-            <div className="px-6 pb-4">
-              <h3 className="text-base font-bold text-gray-900 mb-3">
-                {ROLE_LABELS[formData.userRole]} Permissions
-              </h3>
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="text-left px-5 py-3 text-gray-500 font-medium text-xs uppercase tracking-wide w-2/5">Transactions</th>
-                      {['VIEW','CREATE','EDIT','SHARE','DELETE'].map(h => (
-                        <th key={h} className="px-4 py-3 text-blue-600 font-semibold text-xs uppercase tracking-wide text-center">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {permissions.map((row, i) => (
-                      <tr key={i} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
-                        <td className="px-5 py-3.5 text-gray-700 font-medium">{row.label}</td>
-                        <td className="px-4 py-3.5 text-center"><PermCell value={row.view} /></td>
-                        <td className="px-4 py-3.5 text-center"><PermCell value={row.create} /></td>
-                        <td className="px-4 py-3.5 text-center"><PermCell value={row.edit} /></td>
-                        <td className="px-4 py-3.5 text-center"><PermCell value={row.share} /></td>
-                        <td className="px-4 py-3.5 text-center"><PermCell value={row.delete} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          {/* Permissions sections */}
+          {sections && (
+            <div className="px-6 pb-4 space-y-5 max-h-[55vh] overflow-y-auto thin-scrollbar">
+              {sections.map((sec, si) => (
+                <div key={si}>
+                  <h3 className="text-base font-bold text-gray-900 mb-2">{sec.section}</h3>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      {tableHeader}
+                      <tbody>
+                        {sec.rows.map((row, i) => (
+                          <tr key={i} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
+                            <td className="px-5 py-3.5 text-gray-700 font-medium">{row.label}</td>
+                            <td className="px-4 py-3.5 text-center"><PermCell value={row.view} /></td>
+                            <td className="px-4 py-3.5 text-center"><PermCell value={row.create} /></td>
+                            <td className="px-4 py-3.5 text-center"><PermCell value={row.edit} /></td>
+                            <td className="px-4 py-3.5 text-center"><PermCell value={row.share} /></td>
+                            <td className="px-4 py-3.5 text-center"><PermCell value={row.delete} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 

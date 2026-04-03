@@ -94,3 +94,39 @@ exports.deleteCompany = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+// GET /api/companies/shared — companies where logged-in user's phone is a teamMember contact
+exports.getSharedCompanies = async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ error: 'Not authenticated' });
+
+        const User = require('../models/User');
+        const user = await User.findById(req.user.id).lean();
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        const phone = user.phoneNumber;
+
+        // Find companies where this phone is a team member (not owner)
+        const companies = await Company.find({
+            'teamMembers.contact': phone,
+            users: { $ne: req.user.id } // exclude companies user owns
+        }).lean();
+
+        // Attach the role for this user in each company
+        const result = companies.map(c => {
+            const member = c.teamMembers.find(m => m.contact === phone);
+            return {
+                _id: c._id,
+                name: c.name,
+                businessType: c.businessType,
+                phone: c.phone,
+                role: member?.role || 'salesman',
+                addedAt: member?.addedAt,
+            };
+        });
+
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};

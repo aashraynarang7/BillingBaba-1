@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { Calendar as CalendarIcon, Printer, FileSpreadsheet, Loader2 } from "lucide-react";
 import { format } from "date-fns";
+import { fetchParties } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -83,6 +84,8 @@ export default function ItemReportByPartyPage() {
   );
   const [toDate, setToDate] = useState<Date | undefined>(new Date());
   const [partyFilter, setPartyFilter] = useState("");
+  const [parties, setParties] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
   const [rawSales, setRawSales] = useState<any[]>([]);
   const [rawPurchases, setRawPurchases] = useState<any[]>([]);
@@ -118,6 +121,10 @@ export default function ItemReportByPartyPage() {
   }, [fromDate, toDate, companyId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    fetchParties().then(setParties).catch(() => {});
+  }, []);
 
   // ── Build rows (re-runs when partyFilter changes, no extra API call) ─────────
 
@@ -239,12 +246,36 @@ export default function ItemReportByPartyPage() {
           <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide border border-gray-200 px-3 py-1.5 rounded">
             FILTERS
           </span>
-          <Input
-            placeholder="Party filter"
-            className="w-48 h-8 text-sm"
-            value={partyFilter}
-            onChange={(e) => setPartyFilter(e.target.value)}
-          />
+          <div className="relative">
+            <Input
+              placeholder="Search party..."
+              className="w-56 h-8 text-sm"
+              value={partyFilter}
+              onChange={(e) => { setPartyFilter(e.target.value); setShowSuggestions(true); }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+            />
+            {showSuggestions && partyFilter && (
+              <div className="absolute z-10 bg-white border rounded shadow w-56 max-h-48 overflow-y-auto top-full mt-1">
+                {parties
+                  .filter(p => p.name?.toLowerCase().includes(partyFilter.toLowerCase()))
+                  .slice(0, 10)
+                  .map((p: any) => (
+                    <div
+                      key={p._id}
+                      className="px-3 py-2 text-sm cursor-pointer hover:bg-gray-100"
+                      onMouseDown={() => { setPartyFilter(p.name); setShowSuggestions(false); }}
+                    >
+                      {p.name}
+                    </div>
+                  ))
+                }
+                {parties.filter(p => p.name?.toLowerCase().includes(partyFilter.toLowerCase())).length === 0 && (
+                  <div className="px-3 py-2 text-sm text-gray-400">No parties found</div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Table */}

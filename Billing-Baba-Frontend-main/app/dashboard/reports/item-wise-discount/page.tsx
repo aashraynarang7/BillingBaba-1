@@ -1,7 +1,7 @@
 // app/dashboard/reports/item-wise-discount/page.tsx
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,110 +27,90 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
-import { ChevronDown, Printer, FileText } from "lucide-react";
+import { ChevronDown, Printer, FileText, Loader2 } from "lucide-react";
+import { format } from "date-fns";
+import { fetchReport } from "@/lib/api";
 
 type DiscountItem = {
-  id: number;
-  itemName: string;
-  category: string;
-  partyName: string; 
-  totalQtySold: number;
-  totalSaleAmount: number;
-  totalDiscountAmount: number;
+  name: string;
+  totalQty: number;
+  saleAmount: number;
+  discountAmount: number;
+  avgDiscountPercent: number;
 };
 
-const sampleData: DiscountItem[] = [
-  {
-    id: 1,
-    itemName: "Laptop HP ProBook",
-    category: "Electronics",
-    partyName: "Krishna Traders",
-    totalQtySold: 5,
-    totalSaleAmount: 275000,
-    totalDiscountAmount: 10000,
-  },
-  {
-    id: 2,
-    itemName: "A4 Paper Rim",
-    category: "Stationery",
-    partyName: "Verma Supplies",
-    totalQtySold: 50,
-    totalSaleAmount: 27500,
-    totalDiscountAmount: 500,
-  },
-  {
-    id: 3,
-    itemName: "Drill Machine Bosch",
-    category: "Hardware",
-    partyName: "Gupta & Sons",
-    totalQtySold: 10,
-    totalSaleAmount: 75000,
-    totalDiscountAmount: 2500,
-  },
-  {
-    id: 4,
-    itemName: "Mouse Logitech MX",
-    category: "Electronics",
-    partyName: "Krishna Traders",
-    totalQtySold: 20,
-    totalSaleAmount: 16000,
-    totalDiscountAmount: 1200,
-  },
-];
 const formatCurrency = (val: number) => `₹ ${val.toFixed(2)}`;
 
 export default function ItemWiseDiscountPage() {
-  const [filteredData, setFilteredData] = useState<DiscountItem[]>(sampleData);
+  const [allData, setAllData] = useState<DiscountItem[]>([]);
+  const [filteredData, setFilteredData] = useState<DiscountItem[]>([]);
   const [itemNameFilter, setItemNameFilter] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("all");
-  const [partyFilter, setPartyFilter] = useState("");
   const [selectedFirm, setSelectedFirm] = useState("all-firms");
-
-  const uniqueCategories = useMemo(
-    () => ["all", ...Array.from(new Set(sampleData.map((d) => d.category)))],
-    []
+  const [loading, setLoading] = useState(true);
+  const [fromDate, setFromDate] = useState<Date | undefined>(
+    new Date(new Date().getFullYear(), new Date().getMonth(), 1)
   );
+  const [toDate, setToDate] = useState<Date | undefined>(new Date());
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const filters: Record<string, string> = {};
+      if (fromDate) filters.startDate = format(fromDate, "yyyy-MM-dd");
+      if (toDate) filters.endDate = format(toDate, "yyyy-MM-dd");
+      const data = await fetchReport("item-wise-discount", filters);
+      const items = Array.isArray(data) ? data : [];
+      setAllData(items);
+      setFilteredData(items);
+    } catch (error) {
+      console.error("Error fetching item-wise discount:", error);
+      setAllData([]);
+      setFilteredData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [fromDate, toDate]);
 
   useEffect(() => {
-    let data = sampleData;
+    loadData();
+  }, [loadData]);
+
+  // Client-side filtering
+  useEffect(() => {
+    let data = allData;
     if (itemNameFilter)
       data = data.filter((item) =>
-        item.itemName.toLowerCase().includes(itemNameFilter.toLowerCase())
-      );
-    if (selectedCategory !== "all")
-      data = data.filter((item) => item.category === selectedCategory);
-    if (partyFilter)
-      data = data.filter((item) =>
-        item.partyName.toLowerCase().includes(partyFilter.toLowerCase())
+        item.name.toLowerCase().includes(itemNameFilter.toLowerCase())
       );
     setFilteredData(data);
-  }, [itemNameFilter, selectedCategory, partyFilter]);
+  }, [itemNameFilter, allData]);
 
-  // --- समरी की गणना ---
+  // --- Summary ---
   const summary = useMemo(() => {
     return filteredData.reduce(
       (acc, item) => {
-        acc.totalSaleAmount += item.totalSaleAmount;
-        acc.totalDiscountAmount += item.totalDiscountAmount;
+        acc.totalSaleAmount += item.saleAmount;
+        acc.totalDiscountAmount += item.discountAmount;
         return acc;
       },
       { totalSaleAmount: 0, totalDiscountAmount: 0 }
     );
   }, [filteredData]);
 
-  // --- एक्सपोर्ट और प्रिंट फंक्शन ---
+  // --- Export and print functions ---
   const handleExportExcel = async () => {
     try {
       const XLSX = await import("xlsx") as any;
       const dataToExport = filteredData.map((item) => ({
-        "Item Name": item.itemName,
-        "Total Qty Sold": item.totalQtySold,
-        "Total Sale Amount": item.totalSaleAmount,
-        "Total Disc. Amount": item.totalDiscountAmount,
-        "Avg. Disc. (%)":
-          item.totalSaleAmount > 0
-            ? ((item.totalDiscountAmount / item.totalSaleAmount) * 100).toFixed(2)
-            : 0,
+        "Item Name": item.name,
+        "Total Qty Sold": item.totalQty,
+        "Total Sale Amount": item.saleAmount,
+        "Total Disc. Amount": item.discountAmount,
+        "Avg. Disc. (%)": item.avgDiscountPercent?.toFixed(2) || (
+          item.saleAmount > 0
+            ? ((item.discountAmount / item.saleAmount) * 100).toFixed(2)
+            : 0
+        ),
       }));
       const worksheet = XLSX.utils.json_to_sheet(dataToExport);
       XLSX.utils.sheet_add_aoa(
@@ -181,13 +161,15 @@ export default function ItemWiseDiscountPage() {
                 </Button>
                 <Input
                   type="text"
-                  defaultValue="01/09/2025"
+                  value={fromDate ? format(fromDate, "dd/MM/yyyy") : ""}
+                  readOnly
                   className="w-28 h-8 border-none bg-transparent focus-visible:ring-0"
                 />
                 <span>To</span>
                 <Input
                   type="text"
-                  defaultValue="30/09/2025"
+                  value={toDate ? format(toDate, "dd/MM/yyyy") : ""}
+                  readOnly
                   className="w-28 h-8 border-none bg-transparent focus-visible:ring-0"
                 />
               </div>
@@ -233,26 +215,6 @@ export default function ItemWiseDiscountPage() {
                 onChange={(e) => setItemNameFilter(e.target.value)}
               />
             </div>
-            <Select
-              value={selectedCategory}
-              onValueChange={setSelectedCategory}
-            >
-              <SelectTrigger className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {uniqueCategories.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {cat === "all" ? "All Categories" : cat}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              placeholder="Party Filter"
-              value={partyFilter}
-              onChange={(e) => setPartyFilter(e.target.value)}
-            />
           </div>
           <div className="border rounded-md">
             <Table>
@@ -268,25 +230,33 @@ export default function ItemWiseDiscountPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredData.length > 0 ? (
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="h-48">
+                      <div className="flex items-center justify-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                        <span className="ml-2 text-muted-foreground">Loading...</span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : filteredData.length > 0 ? (
                   filteredData.map((item, index) => {
-                    const avgDiscount =
-                      item.totalSaleAmount > 0
-                        ? (item.totalDiscountAmount / item.totalSaleAmount) *
-                          100
-                        : 0;
+                    const avgDiscount = item.avgDiscountPercent ??
+                      (item.saleAmount > 0
+                        ? (item.discountAmount / item.saleAmount) * 100
+                        : 0);
                     return (
-                      <TableRow key={item.id}>
+                      <TableRow key={item.name + index}>
                         <TableCell>{index + 1}</TableCell>
                         <TableCell className="font-medium">
-                          {item.itemName}
+                          {item.name}
                         </TableCell>
-                        <TableCell>{item.totalQtySold}</TableCell>
+                        <TableCell>{item.totalQty}</TableCell>
                         <TableCell>
-                          {formatCurrency(item.totalSaleAmount)}
+                          {formatCurrency(item.saleAmount)}
                         </TableCell>
                         <TableCell>
-                          {formatCurrency(item.totalDiscountAmount)}
+                          {formatCurrency(item.discountAmount)}
                         </TableCell>
                         <TableCell>{avgDiscount.toFixed(2)} %</TableCell>
                         <TableCell>

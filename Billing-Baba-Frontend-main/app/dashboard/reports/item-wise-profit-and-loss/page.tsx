@@ -89,6 +89,8 @@ export default function ItemWiseProfitAndLossPage() {
   );
   const [toDate, setToDate] = useState<Date | undefined>(new Date());
   const [itemsHavingSaleOnly, setItemsHavingSaleOnly] = useState(false);
+  const [showInactiveItems, setShowInactiveItems] = useState(false);
+  const [inactiveItemNames, setInactiveItemNames] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
 
   const [rawSales, setRawSales] = useState<any[]>([]);
@@ -116,7 +118,7 @@ export default function ItemWiseProfitAndLossPage() {
         fetch(`${API_BASE}/sales?type=CREDIT_NOTE&${cid}&${dateQs}`, { headers: getHeaders() }),
         fetch(`${API_BASE}/purchases?type=BILL&${cid}&${dateQs}`, { headers: getHeaders() }),
         fetch(`${API_BASE}/purchases?type=DEBIT_NOTE&${cid}&${dateQs}`, { headers: getHeaders() }),
-        fetch(`${API_BASE}/items?type=product&${cid}`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/items?type=product&${cid}&includeInactive=true`, { headers: getHeaders() }),
       ]);
 
       const toArr = async (res: Response) => {
@@ -128,6 +130,13 @@ export default function ItemWiseProfitAndLossPage() {
       const [sales, crNotes, purchases, drNotes, items] = await Promise.all([
         toArr(salesRes), toArr(crRes), toArr(purchRes), toArr(drRes), toArr(itemsRes),
       ]);
+
+      // Track inactive item names
+      const inactiveNames = new Set<string>();
+      for (const item of items) {
+        if (item.isActive === false) inactiveNames.add((item.name || '').trim());
+      }
+      setInactiveItemNames(inactiveNames);
 
       setRawSales(sales);
       setRawCrNotes(crNotes);
@@ -172,9 +181,10 @@ export default function ItemWiseProfitAndLossPage() {
     }
 
     let result = Array.from(map.values()).sort((a, b) => a.itemName.localeCompare(b.itemName));
+    if (!showInactiveItems) result = result.filter(r => !inactiveItemNames.has(r.itemName));
     if (itemsHavingSaleOnly) result = result.filter(r => r.sale > 0);
     return result;
-  }, [rawSales, rawCrNotes, rawPurchases, rawDrNotes, productMap, itemsHavingSaleOnly]);
+  }, [rawSales, rawCrNotes, rawPurchases, rawDrNotes, productMap, itemsHavingSaleOnly, showInactiveItems, inactiveItemNames]);
 
   const totalAmount = useMemo(() => rows.reduce((s, r) => s + getNetProfit(r), 0), [rows]);
 
@@ -254,6 +264,16 @@ export default function ItemWiseProfitAndLossPage() {
             </Popover>
           </div>
 
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="show-inactive"
+              checked={showInactiveItems}
+              onCheckedChange={v => setShowInactiveItems(Boolean(v))}
+            />
+            <Label htmlFor="show-inactive" className="text-sm cursor-pointer text-gray-600">
+              Show Inactive Items
+            </Label>
+          </div>
           <div className="flex items-center gap-2">
             <Checkbox
               id="items-having-sale"

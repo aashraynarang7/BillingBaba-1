@@ -1,7 +1,7 @@
 // app/dashboard/reports/sale-purchase-report-by-item-category/page.tsx
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,14 +25,13 @@ import {
   Calendar as CalendarIcon,
   Printer,
   FileSpreadsheet,
+  Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
-// Use dynamic import to avoid SSR bundling issues with xlsx
+import { fetchReport } from "@/lib/api";
 
-// --- हर ट्रांजेक्शन के लिए डेटा की संरचना ---
-type TransactionData = {
-  id: number;
-  partyName: string;
+// --- Data structure ---
+type CategoryData = {
   category: string;
   saleQty: number;
   saleAmount: number;
@@ -40,105 +39,49 @@ type TransactionData = {
   purchaseAmount: number;
 };
 
-// --- सैंपल ट्रांजेक्शन डेटा ---
-const sampleTransactions: TransactionData[] = [
-  {
-    id: 1,
-    partyName: "Krishna Traders",
-    category: "Electronics",
-    saleQty: 5,
-    saleAmount: 275000,
-    purchaseQty: 0,
-    purchaseAmount: 0,
-  },
-  {
-    id: 2,
-    partyName: "Verma Supplies",
-    category: "Stationery",
-    saleQty: 50,
-    saleAmount: 27500,
-    purchaseQty: 100,
-    purchaseAmount: 42000,
-  },
-  {
-    id: 3,
-    partyName: "Gupta & Sons",
-    category: "Hardware",
-    saleQty: 0,
-    purchaseAmount: 68000,
-    purchaseQty: 10,
-    saleAmount: 0,
-  },
-  {
-    id: 4,
-    partyName: "Krishna Traders",
-    category: "Electronics",
-    saleQty: 20,
-    saleAmount: 16000,
-    purchaseQty: 50,
-    purchaseAmount: 32500,
-  },
-  {
-    id: 5,
-    partyName: "Verma Supplies",
-    category: "Furniture",
-    saleQty: 2,
-    saleAmount: 18000,
-    purchaseQty: 5,
-    purchaseAmount: 36000,
-  },
-];
 const formatCurrency = (val: number) => `₹ ${val.toFixed(2)}`;
 
 export default function SalePurchaseReportByCategoryPage() {
-  const [reportData, setReportData] = useState<any[]>([]);
+  const [reportData, setReportData] = useState<CategoryData[]>([]);
   const [partyFilter, setPartyFilter] = useState("");
   const [fromDate, setFromDate] = useState<Date | undefined>(
-    new Date(2025, 8, 1)
+    new Date(new Date().getFullYear(), new Date().getMonth(), 1)
   );
-  const [toDate, setToDate] = useState<Date | undefined>(new Date(2025, 8, 6));
+  const [toDate, setToDate] = useState<Date | undefined>(new Date());
+  const [loading, setLoading] = useState(true);
 
-  // --- पार्टी फिल्टर और डेटा को ग्रुप करने का लॉजिक ---
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const filters: Record<string, string> = {};
+      if (fromDate) filters.startDate = format(fromDate, "yyyy-MM-dd");
+      if (toDate) filters.endDate = format(toDate, "yyyy-MM-dd");
+      const data = await fetchReport("sale-purchase-by-item-category", filters);
+      const items = Array.isArray(data) ? data : [];
+      setReportData(items);
+    } catch (error) {
+      console.error("Error fetching sale-purchase by item category:", error);
+      setReportData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [fromDate, toDate]);
+
   useEffect(() => {
-    // 1. पार्टी के नाम से ट्रांजेक्शन को फिल्टर करें
-    const filteredTransactions = partyFilter
-      ? sampleTransactions.filter((t) =>
-          t.partyName.toLowerCase().includes(partyFilter.toLowerCase())
-        )
-      : sampleTransactions;
+    loadData();
+  }, [loadData]);
 
-    // 2. फिल्टर किए गए ट्रांजेक्शन को कैटेगरी के अनुसार ग्रुप करें
-    const groupedData = filteredTransactions.reduce(
-      (acc, item) => {
-        if (!acc[item.category]) {
-          acc[item.category] = {
-            saleQty: 0,
-            saleAmount: 0,
-            purchaseQty: 0,
-            purchaseAmount: 0,
-          };
-        }
-        acc[item.category].saleQty += item.saleQty;
-        acc[item.category].saleAmount += item.saleAmount;
-        acc[item.category].purchaseQty += item.purchaseQty;
-        acc[item.category].purchaseAmount += item.purchaseAmount;
-        return acc;
-      },
-      {} as Record<string, any>
+  // Client-side party filter (filter categories that match party name if provided)
+  const displayData = useMemo(() => {
+    if (!partyFilter) return reportData;
+    return reportData.filter((item) =>
+      item.category.toLowerCase().includes(partyFilter.toLowerCase())
     );
+  }, [reportData, partyFilter]);
 
-    // 3. ग्रुप किए गए डेटा को टेबल में दिखाने के लिए ऐरे में बदलें
-    const finalReport = Object.keys(groupedData).map((category) => ({
-      category,
-      ...groupedData[category],
-    }));
-
-    setReportData(finalReport);
-  }, [partyFilter]);
-
-  // --- टेबल के टोटल की गणना ---
+  // --- Table totals ---
   const totals = useMemo(() => {
-    return reportData.reduce(
+    return displayData.reduce(
       (acc, item) => {
         acc.saleQty += item.saleQty;
         acc.saleAmount += item.saleAmount;
@@ -148,13 +91,13 @@ export default function SalePurchaseReportByCategoryPage() {
       },
       { saleQty: 0, saleAmount: 0, purchaseQty: 0, purchaseAmount: 0 }
     );
-  }, [reportData]);
+  }, [displayData]);
 
-  // --- एक्सपोर्ट और प्रिंट फंक्शन ---
+  // --- Export and print functions ---
   const handleExportExcel = async () => {
     const xlsx: any = await import("xlsx");
     const { utils } = xlsx;
-    const dataToExport = reportData.map((item) => ({
+    const dataToExport = displayData.map((item) => ({
       "Item Category": item.category,
       "Sale Quantity": item.saleQty,
       "Total Sale Amount": item.saleAmount,
@@ -266,8 +209,17 @@ export default function SalePurchaseReportByCategoryPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {reportData.length > 0 ? (
-                  reportData.map((item) => (
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="h-48">
+                      <div className="flex items-center justify-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                        <span className="ml-2 text-muted-foreground">Loading...</span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : displayData.length > 0 ? (
+                  displayData.map((item) => (
                     <TableRow key={item.category}>
                       <TableCell className="font-medium">
                         {item.category}
