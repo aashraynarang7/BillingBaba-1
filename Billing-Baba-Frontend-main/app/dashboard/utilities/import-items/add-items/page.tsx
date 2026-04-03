@@ -20,15 +20,32 @@ import { Search, Trash2, Settings2, Wifi, PlayCircle, X } from 'lucide-react';
 import { StopAddingDialog } from '../../component/stop-adding-dialog';
 import { CustomizeTableSheet } from '../../component/customize-table-sheet';
 
-const initialItems = [
-  { id: 1, itemCode: '8901058895773', itemName: 'MAGGI H&S TCS Bottle 1kg', category: 'Food', hsnCode: '10006837', mrp: 170, salePrice: 170, tax: null, baseUnit: 'Kilograms', openingStock: null },
-  { id: 2, itemCode: '', itemName: '', category: '', hsnCode: '', mrp: null, salePrice: null, tax: null, baseUnit: '', openingStock: null },
-  ...Array.from({ length: 8 }, (_, i) => ({ id: i + 3, itemCode: '', itemName: '', category: '', hsnCode: '', mrp: null, salePrice: null, tax: null, baseUnit: '', openingStock: null })),
-];
+function makeEmptyRows(start: number, count: number) {
+    return Array.from({ length: count }, (_, i) => ({
+        id: start + i, itemCode: '', itemName: '', category: '', hsnCode: '',
+        mrp: null as number | null, salePrice: null as number | null,
+        tax: null as number | null, baseUnit: '', openingStock: null as number | null,
+    }));
+}
+
+function getInitialItems() {
+    if (typeof window === 'undefined') return makeEmptyRows(1, 10);
+    const stored = sessionStorage.getItem('import-barcodes');
+    if (!stored) return makeEmptyRows(1, 10);
+    sessionStorage.removeItem('import-barcodes');
+    const codes: string[] = JSON.parse(stored);
+    const rows = codes.map((code, i) => ({
+        id: i + 1, itemCode: code, itemName: '', category: '', hsnCode: '',
+        mrp: null as number | null, salePrice: null as number | null,
+        tax: null as number | null, baseUnit: '', openingStock: null as number | null,
+    }));
+    // Always pad to at least 10 rows
+    return [...rows, ...makeEmptyRows(rows.length + 1, Math.max(0, 10 - rows.length))];
+}
 
 export default function AddItemsPage() {
-  const router = useRouter(); // 2. Initialize the router
-  const [items, setItems] = useState(initialItems);
+  const router = useRouter();
+  const [items, setItems] = useState(getInitialItems);
   const [isStopDialogOpen, setIsStopDialogOpen] = useState(false); // 3. Add state to control the dialog
 
   // 4. Create a function to handle navigating back

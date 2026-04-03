@@ -72,7 +72,7 @@ export default function ImportItemsPage() {
     // UPDATED: This function handles navigation based on the selected method
     const handleContinue = () => {
         if (selectedMethod === "barcode") {
-            router.push('/dashboard/utilities/import-items/add-items');
+            router.push('/dashboard/utilities/import-items/scan-select');
         } else if (selectedMethod === "excel") {
             router.push('/dashboard/utilities/import-items/import-items-excel');
             
